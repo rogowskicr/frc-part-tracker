@@ -1,12 +1,9 @@
 -- FRC Part Tracker - Initial Schema
 -- Run this in your Supabase SQL editor or via Supabase CLI
 
--- Enable UUID extension
-create extension if not exists "uuid-ossp";
-
 -- ─── TEAMS ────────────────────────────────────────────────────────────────────
 create table if not exists public.teams (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   name        text not null,
   year        integer not null default extract(year from now())::integer,
   settings    jsonb not null default '{}',
@@ -26,7 +23,7 @@ create table if not exists public.user_profiles (
 
 -- ─── ASSEMBLIES ───────────────────────────────────────────────────────────────
 create table if not exists public.assemblies (
-  id                  uuid primary key default uuid_generate_v4(),
+  id                  uuid primary key default gen_random_uuid(),
   assembly_number     text not null,            -- e.g. 26_A_100
   name                text not null,
   description         text,
@@ -41,17 +38,24 @@ create table if not exists public.assemblies (
 );
 
 -- ─── PARTS ────────────────────────────────────────────────────────────────────
-create type if not exists public.part_type as enum ('manufactured', 'off_shelf');
-create type if not exists public.part_status as enum (
-  'design',
-  'ready_for_manufacturing',
-  'in_progress',
-  'complete',
-  'on_hold'
-);
+do $$ begin
+  create type public.part_type as enum ('manufactured', 'off_shelf');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type public.part_status as enum (
+    'design',
+    'ready_for_manufacturing',
+    'in_progress',
+    'complete',
+    'on_hold'
+  );
+exception when duplicate_object then null;
+end $$;
 
 create table if not exists public.parts (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   part_number     text,                          -- e.g. 26_P_101 (null for COTS)
   name            text not null,
   description     text,
@@ -69,7 +73,7 @@ create table if not exists public.parts (
 
 -- ─── BOM ITEMS ────────────────────────────────────────────────────────────────
 create table if not exists public.bom_items (
-  id                          uuid primary key default uuid_generate_v4(),
+  id                          uuid primary key default gen_random_uuid(),
   assembly_id                 uuid not null references public.assemblies(id) on delete cascade,
   part_id                     uuid not null references public.parts(id) on delete cascade,
   onshape_quantity            integer not null default 1,
@@ -84,7 +88,7 @@ create table if not exists public.bom_items (
 
 -- ─── MANUFACTURING PROCESSES ──────────────────────────────────────────────────
 create table if not exists public.manufacturing_processes (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   team_id     uuid not null references public.teams(id) on delete cascade,
   name        text not null,
   created_at  timestamptz not null default now(),
@@ -95,14 +99,17 @@ create table if not exists public.manufacturing_processes (
 -- 3D Print, Laser Cut, CNC Mill, CNC Lathe, Hand Fabrication, Welding, Outsourced
 
 -- ─── PART MANUFACTURING ───────────────────────────────────────────────────────
-create type if not exists public.manufacturing_status as enum (
-  'not_started',
-  'in_progress',
-  'complete'
-);
+do $$ begin
+  create type public.manufacturing_status as enum (
+    'not_started',
+    'in_progress',
+    'complete'
+  );
+exception when duplicate_object then null;
+end $$;
 
 create table if not exists public.part_manufacturing (
-  id                  uuid primary key default uuid_generate_v4(),
+  id                  uuid primary key default gen_random_uuid(),
   part_id             uuid not null references public.parts(id) on delete cascade,
   process_id          uuid references public.manufacturing_processes(id) on delete set null,
   outsourced          boolean not null default false,
@@ -116,7 +123,7 @@ create table if not exists public.part_manufacturing (
 
 -- ─── PART STATUS HISTORY ──────────────────────────────────────────────────────
 create table if not exists public.part_status_history (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   part_id     uuid not null references public.parts(id) on delete cascade,
   status      public.part_status not null,
   changed_at  timestamptz not null default now(),
@@ -267,3 +274,4 @@ $$ language plpgsql security definer;
 create or replace trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
