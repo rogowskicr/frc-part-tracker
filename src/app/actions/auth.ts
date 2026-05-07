@@ -44,40 +44,17 @@ export async function signup(formData: FormData) {
     return { error: 'Signup failed. Please try again.' };
   }
 
-  // Create the team
-  const { data: team, error: teamError } = await supabase
-    .from('teams')
-    .insert({ name: teamName, year: teamYear })
-    .select()
-    .single();
+  // Use a security definer RPC to create team + update profile + insert processes.
+  // This bypasses RLS since the session cookie may not be flushed yet in the same action.
+  const { error: rpcError } = await supabase.rpc('complete_signup', {
+    p_team_name: teamName,
+    p_team_year: teamYear,
+    p_user_name: name,
+  });
 
-  if (teamError) {
-    return { error: teamError.message };
+  if (rpcError) {
+    return { error: rpcError.message };
   }
-
-  // Update user profile with team and admin role
-  const { error: profileError } = await supabase
-    .from('user_profiles')
-    .update({ team_id: team.id, role: 'admin', name })
-    .eq('id', authData.user.id);
-
-  if (profileError) {
-    return { error: profileError.message };
-  }
-
-  // Insert default manufacturing processes for the new team
-  const defaultProcesses = [
-    '3D Printing',
-    'Laser Cut',
-    'CNC Mill',
-    'CNC Lathe',
-    'Hand Fabrication',
-    'Welding',
-    'Sheet Metal',
-  ];
-  await supabase.from('manufacturing_processes').insert(
-    defaultProcesses.map((name) => ({ team_id: team.id, name }))
-  );
 
   revalidatePath('/', 'layout');
   redirect('/dashboard');
