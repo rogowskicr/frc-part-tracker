@@ -61,10 +61,11 @@ export async function updateAssembly(id: string, formData: FormData) {
   const name = (formData.get('name') as string).trim();
   const description = (formData.get('description') as string | null)?.trim() || null;
   const cad_link = (formData.get('cad_link') as string | null)?.trim() || null;
+  const parent_assembly_id = (formData.get('parent_assembly_id') as string | null) || null;
 
   const { error } = await supabase
     .from('assemblies')
-    .update({ name, description, cad_link })
+    .update({ name, description, cad_link, parent_assembly_id: parent_assembly_id || null })
     .eq('id', id);
 
   if (error) return { error: error.message };
@@ -84,16 +85,16 @@ export async function deleteAssembly(id: string) {
   redirect('/assemblies');
 }
 
-export async function getNextAssemblyNumber(year: number): Promise<string> {
+export async function getNextAssemblyNumber(code: string): Promise<string> {
   const supabase = await createClient();
-  const yy = String(year).slice(-2);
 
   const { data } = await supabase
     .from('assemblies')
     .select('assembly_number')
-    .like('assembly_number', `${yy}_A_%`);
+    .gte('assembly_number', `${code}_A_`)
+    .lt('assembly_number', code + '\x60');
 
   const { nextTopLevelAssemblyNumber } = await import('@/lib/validation');
   const existing = data?.map((r) => r.assembly_number) ?? [];
-  return nextTopLevelAssemblyNumber(year, existing);
+  return nextTopLevelAssemblyNumber(code, existing);
 }

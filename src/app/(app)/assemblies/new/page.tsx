@@ -1,10 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { createAssembly } from '@/app/actions/assemblies';
-import { validateAssemblyNumber, getSeasonYY, getCurrentSeasonYear } from '@/lib/validation';
+import { validateAssemblyNumber, defaultProjectCode } from '@/lib/validation';
+
+async function fetchActiveCode(): Promise<string> {
+  try {
+    const res = await fetch('/api/active-season');
+    if (res.ok) {
+      const { code } = await res.json();
+      if (code) return code;
+    }
+  } catch {
+    // fall through to default
+  }
+  return defaultProjectCode();
+}
 
 interface Assembly {
   id: string;
@@ -13,38 +25,36 @@ interface Assembly {
 }
 
 interface Props {
-  searchParams: { parent?: string };
+  searchParams: Promise<{ parent?: string }>;
 }
 
 export default function NewAssemblyPage({ searchParams }: Props) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { parent } = use(searchParams);
+  const [error, setError]           = useState<string | null>(null);
+  const [loading, setLoading]       = useState(false);
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [assemblyNumber, setAssemblyNumber] = useState('');
-  const [numberError, setNumberError] = useState<string | null>(null);
+  const [numberError, setNumberError]       = useState<string | null>(null);
+  const [activeCode, setActiveCode] = useState<string>(defaultProjectCode());
 
-  const yy = getSeasonYY();
-  const year = getCurrentSeasonYear();
-
-  // Fetch existing assemblies for parent dropdown + suggested number
   useEffect(() => {
     async function load() {
-      const res = await fetch('/api/assemblies');
+      const [code, res] = await Promise.all([
+        fetchActiveCode(),
+        fetch('/api/assemblies'),
+      ]);
+      setActiveCode(code);
       if (res.ok) {
-        const data = await res.json();
+        const data: Assembly[] = await res.json();
         setAssemblies(data);
-        // Auto-suggest next number
         const { nextTopLevelAssemblyNumber } = await import('@/lib/validation');
-        const suggested = nextTopLevelAssemblyNumber(
-          year,
-          data.map((a: Assembly) => a.assembly_number)
+        setAssemblyNumber(
+          nextTopLevelAssemblyNumber(code, data.map((a) => a.assembly_number))
         );
-        setAssemblyNumber(suggested);
       }
     }
     load();
-  }, [year]);
+  }, []);
 
   function handleNumberChange(val: string) {
     setAssemblyNumber(val);
@@ -71,24 +81,24 @@ export default function NewAssemblyPage({ searchParams }: Props) {
   return (
     <div className="max-w-xl">
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/assemblies" className="text-gray-400 hover:text-gray-600 text-sm">
+        <Link href="/assemblies" className="text-gray-400 hover:text-gray-300 text-sm">
           ← Assemblies
         </Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-xl font-bold text-gray-900">New Assembly</h1>
+        <span className="text-gray-600">/</span>
+        <h1 className="text-xl font-bold text-gray-100">New Assembly</h1>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
         <form action={handleSubmit} className="space-y-5">
           {error && (
-            <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm border border-red-200">
+            <div className="p-3 rounded-lg bg-red-900/30 text-red-300 text-sm border border-red-700">
               {error}
             </div>
           )}
 
           <div>
-            <label htmlFor="assembly_number" className="block text-sm font-medium text-gray-700 mb-1">
-              Assembly Number <span className="text-red-500">*</span>
+            <label htmlFor="assembly_number" className="block text-sm font-medium text-gray-200 mb-1">
+              Assembly Number <span className="text-red-400">*</span>
             </label>
             <input
               id="assembly_number"
@@ -97,69 +107,69 @@ export default function NewAssemblyPage({ searchParams }: Props) {
               required
               value={assemblyNumber}
               onChange={(e) => handleNumberChange(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase ${
-                numberError ? 'border-red-400' : 'border-gray-300'
+              className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase bg-gray-900 text-gray-100 placeholder-gray-500 ${
+                numberError ? 'border-red-500' : 'border-gray-600'
               }`}
-              placeholder={`${yy}_A_100`}
+              placeholder={`${activeCode}_A_100`}
             />
             {numberError ? (
               <p className="mt-1 text-xs text-red-600">{numberError}</p>
             ) : (
-              <p className="mt-1 text-xs text-gray-500">
-                Format: {yy}_A_NNN — top-level assemblies use multiples of 100
+              <p className="mt-1 text-xs text-gray-400">
+                Format: {activeCode}_A_NNN — top-level assemblies use multiples of 100
               </p>
             )}
           </div>
 
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-              Name <span className="text-red-500">*</span>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-200 mb-1">
+              Name <span className="text-red-400">*</span>
             </label>
             <input
               id="name"
               name="name"
               type="text"
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-900 text-gray-100 placeholder-gray-500"
               placeholder="Drivetrain Assembly"
             />
           </div>
 
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="description" className="block text-sm font-medium text-gray-200 mb-1">
               Description
             </label>
             <textarea
               id="description"
               name="description"
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-gray-900 text-gray-100 placeholder-gray-500"
               placeholder="Optional description"
             />
           </div>
 
           <div>
-            <label htmlFor="cad_link" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="cad_link" className="block text-sm font-medium text-gray-200 mb-1">
               CAD Link
             </label>
             <input
               id="cad_link"
               name="cad_link"
               type="url"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-900 text-gray-100 placeholder-gray-500"
               placeholder="https://cad.onshape.com/..."
             />
           </div>
 
           <div>
-            <label htmlFor="parent_assembly_id" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="parent_assembly_id" className="block text-sm font-medium text-gray-200 mb-1">
               Parent Assembly
             </label>
             <select
               id="parent_assembly_id"
               name="parent_assembly_id"
-              defaultValue={searchParams?.parent ?? ''}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              defaultValue={parent ?? ''}
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
             >
               <option value="">None (top-level)</option>
               {assemblies.map((a) => (
@@ -180,7 +190,7 @@ export default function NewAssemblyPage({ searchParams }: Props) {
             </button>
             <Link
               href="/assemblies"
-              className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium text-sm hover:bg-gray-50 transition-colors"
+              className="px-5 py-2 bg-gray-900 border border-gray-600 text-gray-200 rounded-lg font-medium text-sm hover:bg-gray-700 transition-colors"
             >
               Cancel
             </Link>

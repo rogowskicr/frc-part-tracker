@@ -135,6 +135,51 @@ export async function deletePart(id: string, assemblyId: string) {
   redirect(`/assemblies/${assemblyId}`);
 }
 
+export async function updatePart(id: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const name = (formData.get('name') as string).trim();
+  const description = (formData.get('description') as string | null)?.trim() || null;
+  const cad_link = (formData.get('cad_link') as string | null)?.trim() || null;
+  const assigned_to = (formData.get('assigned_to') as string | null) || null;
+  const type = formData.get('type') as 'manufactured' | 'off_shelf';
+
+  let naming_flagged: boolean | undefined;
+  if (type === 'manufactured') {
+    const conformance = checkNamingConformance(name, 'part');
+    naming_flagged = !conformance.conforms;
+  }
+
+  const updateFields: Record<string, unknown> = { name, description, cad_link, assigned_to: assigned_to || null };
+  if (naming_flagged !== undefined) updateFields.naming_flagged = naming_flagged;
+
+  const { error } = await supabase.from('parts').update(updateFields).eq('id', id);
+  if (error) return { error: error.message };
+
+  const onshape_quantity = parseInt(formData.get('quantity') as string, 10) || 1;
+  const cots_quantity_spare = parseInt(formData.get('spare_quantity') as string, 10) || 0;
+  const cots_vendor = (formData.get('cots_vendor') as string | null)?.trim() || null;
+  const cots_supplier_part_number = (formData.get('cots_supplier_part_number') as string | null)?.trim() || null;
+  const cots_purchase_link = (formData.get('cots_purchase_link') as string | null)?.trim() || null;
+
+  await supabase.from('bom_items').update({
+    onshape_quantity,
+    cots_quantity_spare,
+    cots_vendor,
+    cots_supplier_part_number,
+    cots_purchase_link,
+  }).eq('part_id', id);
+
+  revalidatePath(`/parts/${id}`);
+  revalidatePath('/parts');
+  redirect(`/parts/${id}`);
+}
+
 export async function getNextPartNumber(assemblyNumber: string): Promise<string> {
   const supabase = await createClient();
   const yy = assemblyNumber.slice(0, 2);

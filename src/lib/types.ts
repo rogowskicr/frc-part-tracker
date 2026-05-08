@@ -114,11 +114,11 @@ export const PART_STATUS_LABELS: Record<PartStatus, string> = {
 };
 
 export const PART_STATUS_COLORS: Record<PartStatus, string> = {
-  design: 'bg-blue-100 text-blue-800',
-  ready_for_manufacturing: 'bg-yellow-100 text-yellow-800',
-  in_progress: 'bg-orange-100 text-orange-800',
-  complete: 'bg-green-100 text-green-800',
-  on_hold: 'bg-gray-100 text-gray-700',
+  design: 'bg-blue-900/50 text-blue-300',
+  ready_for_manufacturing: 'bg-yellow-900/50 text-yellow-300',
+  in_progress: 'bg-orange-900/50 text-orange-300',
+  complete: 'bg-green-900/50 text-green-300',
+  on_hold: 'bg-gray-700 text-gray-300',
 };
 
 export const DEFAULT_COTS_VENDORS = [

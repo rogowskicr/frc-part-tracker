@@ -20,11 +20,26 @@ export default async function PartsPage({
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('team_id')
+    .select('team_id, active_project_code')
     .eq('id', user.id)
     .single();
 
-  if (!profile?.team_id) return <div className="text-gray-500 py-8">No team assigned.</div>;
+  if (!profile?.team_id) return <div className="text-gray-400 py-8">No team assigned.</div>;
+
+  const activeCode = profile.active_project_code ?? null;
+
+  // When a project is active, pre-fetch the assembly IDs for that project prefix so
+  // parts are filtered to only items belonging to that project.
+  let projectAssemblyIds: string[] | null = null;
+  if (activeCode) {
+    const { data: projectAssemblies } = await supabase
+      .from('assemblies')
+      .select('id')
+      .eq('team_id', profile.team_id)
+      .gte('assembly_number', `${activeCode}_`)
+      .lt('assembly_number', activeCode + '\x60');
+    projectAssemblyIds = (projectAssemblies ?? []).map((a) => a.id);
+  }
 
   let query = supabase
     .from('parts')
@@ -37,6 +52,14 @@ export default async function PartsPage({
     )
     .eq('team_id', profile.team_id)
     .order('created_at', { ascending: false });
+
+  if (projectAssemblyIds !== null) {
+    if (projectAssemblyIds.length === 0) {
+      query = query.in('assembly_id', ['00000000-0000-0000-0000-000000000000']);
+    } else {
+      query = query.in('assembly_id', projectAssemblyIds);
+    }
+  }
 
   if (filters.status) {
     query = query.eq('status', filters.status);
@@ -62,15 +85,27 @@ export default async function PartsPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Parts</h1>
-          <p className="text-gray-500 mt-1">{parts?.length ?? 0} shown</p>
+          <h1 className="text-2xl font-bold text-gray-100">Parts</h1>
+          <p className="text-gray-400 mt-1">
+            {parts?.length ?? 0} shown
+            {activeCode ? ` · Project ${activeCode}` : ''}
+          </p>
         </div>
-        <Link
-          href="/parts/new"
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-        >
-          + New Part
-        </Link>
+        {activeCode ? (
+          <Link
+            href="/parts/new"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            + New Part
+          </Link>
+        ) : (
+          <span
+            title="Select a season from the Team page first"
+            className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed"
+          >
+            + New Part
+          </span>
+        )}
       </div>
 
       {/* Filter bar */}
@@ -94,8 +129,8 @@ export default async function PartsPage({
       {!parts || parts.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="divide-y divide-gray-100">
+        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+          <div className="divide-y divide-gray-700">
             {parts.map((part) => {
               const assembly = part.assembly as unknown as {
                 id: string;
@@ -107,18 +142,18 @@ export default async function PartsPage({
               return (
                 <div
                   key={part.id}
-                  className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-gray-50"
+                  className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-gray-700/50"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       {part.part_number && (
-                        <span className="font-mono text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
+                        <span className="font-mono text-xs text-blue-400 bg-blue-900/30 px-1.5 py-0.5 rounded shrink-0">
                           {part.part_number}
                         </span>
                       )}
                       <Link
                         href={`/parts/${part.id}`}
-                        className="text-sm font-medium text-gray-900 hover:text-blue-600 truncate"
+                        className="text-sm font-medium text-gray-100 hover:text-blue-400 truncate"
                       >
                         {part.name}
                       </Link>
@@ -132,7 +167,7 @@ export default async function PartsPage({
                       {assembly && (
                         <Link
                           href={`/assemblies/${assembly.id}`}
-                          className="text-xs text-gray-400 hover:text-blue-500"
+                          className="text-xs text-gray-500 hover:text-blue-400"
                         >
                           {assembly.assembly_number} — {assembly.name}
                         </Link>
@@ -175,7 +210,7 @@ function FilterChip({
       className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
         active
           ? 'bg-blue-600 text-white'
-          : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+          : 'bg-gray-800 border border-gray-600 text-gray-300 hover:bg-gray-700'
       }`}
     >
       {label}
@@ -185,10 +220,10 @@ function FilterChip({
 
 function EmptyState() {
   return (
-    <div className="text-center py-16 bg-white rounded-xl border border-gray-200 border-dashed">
+    <div className="text-center py-16 bg-gray-800 rounded-xl border border-gray-700 border-dashed">
       <span className="text-4xl">🔩</span>
-      <h3 className="mt-4 text-lg font-medium text-gray-900">No parts found</h3>
-      <p className="mt-2 text-gray-500 text-sm">
+      <h3 className="mt-4 text-lg font-medium text-gray-100">No parts found</h3>
+      <p className="mt-2 text-gray-400 text-sm">
         Add parts to an assembly or create one here.
       </p>
       <Link

@@ -37,20 +37,20 @@ export default function UpdateStatusForm({ partId, currentStatus, statuses }: Pr
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       {error && (
-        <div className="p-2 rounded bg-red-50 text-red-700 text-sm border border-red-200">{error}</div>
+        <div className="p-2 rounded bg-red-900/30 text-red-300 text-sm border border-red-700">{error}</div>
       )}
       {success && (
-        <div className="p-2 rounded bg-green-50 text-green-700 text-sm border border-green-200">
+        <div className="p-2 rounded bg-green-900/30 text-green-300 text-sm border border-green-700">
           Status updated!
         </div>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">New Status</label>
+        <label className="block text-sm font-medium text-gray-200 mb-1">New Status</label>
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value as PartStatus)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
         >
           {statuses.map((s) => (
             <option key={s} value={s}>
@@ -61,12 +61,12 @@ export default function UpdateStatusForm({ partId, currentStatus, statuses }: Pr
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+        <label className="block text-sm font-medium text-gray-200 mb-1">Notes (optional)</label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-gray-900 text-gray-100 placeholder-gray-500"
           placeholder="Reason for status change…"
         />
       </div>

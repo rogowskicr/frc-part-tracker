@@ -3,8 +3,21 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { createPart } from '@/app/actions/parts';
-import { validatePartNumber, getSeasonYY } from '@/lib/validation';
+import { validatePartNumber, defaultProjectCode } from '@/lib/validation';
 import { DEFAULT_COTS_VENDORS } from '@/lib/types';
+
+async function fetchActiveCode(): Promise<string> {
+  try {
+    const res = await fetch('/api/active-season');
+    if (res.ok) {
+      const { code } = await res.json();
+      if (code) return code;
+    }
+  } catch {
+    // fall through to default
+  }
+  return defaultProjectCode();
+}
 
 interface Assembly {
   id: string;
@@ -30,16 +43,17 @@ export default function NewPartPage({ searchParams }: Props) {
   const [partNumber, setPartNumber] = useState('');
   const [numberError, setNumberError] = useState<string | null>(null);
   const [selectedAssembly, setSelectedAssembly] = useState('');
-
-  const yy = getSeasonYY();
+  const [activeCode, setActiveCode] = useState<string>(defaultProjectCode());
 
   useEffect(() => {
     async function load() {
-      const [assemblyRes, memberRes, spRes] = await Promise.all([
+      const [assemblyRes, memberRes, spRes, code] = await Promise.all([
         fetch('/api/assemblies'),
         fetch('/api/team-members'),
         searchParams,
+        fetchActiveCode(),
       ]);
+      setActiveCode(code);
 
       if (assemblyRes.ok) {
         const data: Assembly[] = await assemblyRes.json();
@@ -113,24 +127,24 @@ export default function NewPartPage({ searchParams }: Props) {
   return (
     <div className="max-w-xl">
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/parts" className="text-gray-400 hover:text-gray-600 text-sm">
+        <Link href="/parts" className="text-gray-400 hover:text-gray-300 text-sm">
           ← Parts
         </Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-xl font-bold text-gray-900">New Part</h1>
+        <span className="text-gray-600">/</span>
+        <h1 className="text-xl font-bold text-gray-100">New Part</h1>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-gray-800 rounded-xl border border-gray-700 p-6">
         <form action={handleSubmit} className="space-y-5">
           {error && (
-            <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm border border-red-200">
+            <div className="p-3 rounded-lg bg-red-900/30 text-red-300 text-sm border border-red-700">
               {error}
             </div>
           )}
 
           {/* Part type toggle */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Part Type</label>
+            <label className="block text-sm font-medium text-gray-200 mb-2">Part Type</label>
             <div className="flex gap-2">
               {(['manufactured', 'off_shelf'] as const).map((t) => (
                 <button
@@ -140,7 +154,7 @@ export default function NewPartPage({ searchParams }: Props) {
                   className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
                     partType === t
                       ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      : 'bg-gray-900 text-gray-200 border-gray-600 hover:bg-gray-700'
                   }`}
                 >
                   {t === 'manufactured' ? '🔧 Manufactured' : '🛒 Off-the-Shelf'}
@@ -151,8 +165,8 @@ export default function NewPartPage({ searchParams }: Props) {
 
           {/* Assembly */}
           <div>
-            <label htmlFor="assembly_id" className="block text-sm font-medium text-gray-700 mb-1">
-              Assembly <span className="text-red-500">*</span>
+            <label htmlFor="assembly_id" className="block text-sm font-medium text-gray-200 mb-1">
+              Assembly <span className="text-red-400">*</span>
             </label>
             <select
               id="assembly_id"
@@ -160,7 +174,7 @@ export default function NewPartPage({ searchParams }: Props) {
               required
               value={selectedAssembly}
               onChange={(e) => handleAssemblyChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
             >
               <option value="">Select assembly…</option>
               {assemblies.map((a) => (
@@ -174,8 +188,8 @@ export default function NewPartPage({ searchParams }: Props) {
           {/* Part number — manufactured only */}
           {partType === 'manufactured' && (
             <div>
-              <label htmlFor="part_number" className="block text-sm font-medium text-gray-700 mb-1">
-                Part Number <span className="text-red-500">*</span>
+              <label htmlFor="part_number" className="block text-sm font-medium text-gray-200 mb-1">
+                Part Number <span className="text-red-400">*</span>
               </label>
               <input
                 id="part_number"
@@ -183,43 +197,43 @@ export default function NewPartPage({ searchParams }: Props) {
                 type="text"
                 value={partNumber}
                 onChange={(e) => handleNumberChange(e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase ${
-                  numberError ? 'border-red-400' : 'border-gray-300'
+                className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase bg-gray-900 text-gray-100 placeholder-gray-500 ${
+                  numberError ? 'border-red-500' : 'border-gray-600'
                 }`}
-                placeholder={`${yy}_P_101`}
+                placeholder={`${activeCode}_P_101`}
               />
               {numberError ? (
                 <p className="mt-1 text-xs text-red-600">{numberError}</p>
               ) : (
-                <p className="mt-1 text-xs text-gray-500">Format: {yy}_P_NNN</p>
+                <p className="mt-1 text-xs text-gray-400">Format: {activeCode}_P_NNN</p>
               )}
             </div>
           )}
 
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="name" className="block text-sm font-medium text-gray-200 mb-1">
               {partType === 'off_shelf' ? 'Part Name / Description' : 'Part Name'}{' '}
-              <span className="text-red-500">*</span>
+              <span className="text-red-400">*</span>
             </label>
             <input
               id="name"
               name="name"
               type="text"
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-900 text-gray-100 placeholder-gray-500"
               placeholder={partType === 'off_shelf' ? 'e.g. 1/4-20 Hex Bolt' : 'e.g. Gearbox Bracket'}
             />
           </div>
 
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="description" className="block text-sm font-medium text-gray-200 mb-1">
               Notes
             </label>
             <textarea
               id="description"
               name="description"
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-gray-900 text-gray-100 placeholder-gray-500"
               placeholder="Optional notes"
             />
           </div>
@@ -227,7 +241,7 @@ export default function NewPartPage({ searchParams }: Props) {
           {/* Quantity */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="quantity" className="block text-sm font-medium text-gray-200 mb-1">
                 Quantity Required
               </label>
               <input
@@ -236,11 +250,11 @@ export default function NewPartPage({ searchParams }: Props) {
                 type="number"
                 min={1}
                 defaultValue={1}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
               />
             </div>
             <div>
-              <label htmlFor="spare_quantity" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="spare_quantity" className="block text-sm font-medium text-gray-200 mb-1">
                 Spare Quantity
               </label>
               <input
@@ -249,7 +263,7 @@ export default function NewPartPage({ searchParams }: Props) {
                 type="number"
                 min={0}
                 defaultValue={0}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
               />
             </div>
           </div>
@@ -258,13 +272,13 @@ export default function NewPartPage({ searchParams }: Props) {
           {partType === 'off_shelf' && (
             <>
               <div>
-                <label htmlFor="cots_vendor" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="cots_vendor" className="block text-sm font-medium text-gray-200 mb-1">
                   Vendor
                 </label>
                 <select
                   id="cots_vendor"
                   name="cots_vendor"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
                 >
                   <option value="">Select vendor…</option>
                   {DEFAULT_COTS_VENDORS.map((v) => (
@@ -278,7 +292,7 @@ export default function NewPartPage({ searchParams }: Props) {
               <div>
                 <label
                   htmlFor="cots_supplier_part_number"
-                  className="block text-sm font-medium text-gray-700 mb-1"
+                  className="block text-sm font-medium text-gray-200 mb-1"
                 >
                   Supplier Part Number
                 </label>
@@ -286,7 +300,7 @@ export default function NewPartPage({ searchParams }: Props) {
                   id="cots_supplier_part_number"
                   name="cots_supplier_part_number"
                   type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100 placeholder-gray-500"
                   placeholder="e.g. AM-0447"
                 />
               </div>
@@ -294,7 +308,7 @@ export default function NewPartPage({ searchParams }: Props) {
               <div>
                 <label
                   htmlFor="cots_purchase_link"
-                  className="block text-sm font-medium text-gray-700 mb-1"
+                  className="block text-sm font-medium text-gray-200 mb-1"
                 >
                   Purchase Link
                 </label>
@@ -302,7 +316,7 @@ export default function NewPartPage({ searchParams }: Props) {
                   id="cots_purchase_link"
                   name="cots_purchase_link"
                   type="url"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100 placeholder-gray-500"
                   placeholder="https://www.andymark.com/..."
                 />
               </div>
@@ -312,14 +326,14 @@ export default function NewPartPage({ searchParams }: Props) {
           {/* CAD link — manufactured only */}
           {partType === 'manufactured' && (
             <div>
-              <label htmlFor="cad_link" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="cad_link" className="block text-sm font-medium text-gray-200 mb-1">
                 CAD Link
               </label>
               <input
                 id="cad_link"
                 name="cad_link"
                 type="url"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100 placeholder-gray-500"
                 placeholder="https://cad.onshape.com/..."
               />
             </div>
@@ -327,13 +341,13 @@ export default function NewPartPage({ searchParams }: Props) {
 
           {/* Assign to */}
           <div>
-            <label htmlFor="assigned_to" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="assigned_to" className="block text-sm font-medium text-gray-200 mb-1">
               Assign To
             </label>
             <select
               id="assigned_to"
               name="assigned_to"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
             >
               <option value="">Unassigned</option>
               {teamMembers.map((m) => (
@@ -354,7 +368,7 @@ export default function NewPartPage({ searchParams }: Props) {
             </button>
             <Link
               href="/parts"
-              className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium text-sm hover:bg-gray-50 transition-colors"
+              className="px-5 py-2 bg-gray-900 border border-gray-600 text-gray-200 rounded-lg font-medium text-sm hover:bg-gray-700 transition-colors"
             >
               Cancel
             </Link>

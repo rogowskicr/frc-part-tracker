@@ -4,16 +4,26 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 
+function generateEmail(username: string): string {
+  return `${username.toLowerCase()}@frc-part-tracker.local`;
+}
+
 export async function login(formData: FormData) {
   const supabase = await createClient();
 
-  const email = formData.get('email') as string;
+  const username = (formData.get('username') as string).toLowerCase();
   const password = formData.get('password') as string;
+
+  if (!username || !password) {
+    return { error: 'Username and password are required' };
+  }
+
+  const email = generateEmail(username);
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    return { error: error.message };
+    return { error: 'Invalid username or password' };
   }
 
   revalidatePath('/', 'layout');
@@ -23,17 +33,29 @@ export async function login(formData: FormData) {
 export async function signup(formData: FormData) {
   const supabase = await createClient();
 
-  const email = formData.get('email') as string;
+  const mode = (formData.get('mode') as string) || 'create';
+  const username = (formData.get('username') as string).toLowerCase();
   const password = formData.get('password') as string;
-  const name = formData.get('name') as string;
-  const teamName = formData.get('team_name') as string;
-  const teamYear = parseInt(formData.get('team_year') as string, 10);
+  const name = (formData.get('name') as string)?.trim();
 
-  // Create the user
+  if (!username || !password || !name) {
+    return { error: 'All fields are required' };
+  }
+
+  if (username.length < 3 || username.length > 20) {
+    return { error: 'Username must be 3-20 characters' };
+  }
+
+  if (!/^[a-z0-9_]+$/.test(username)) {
+    return { error: 'Username can only contain letters, numbers, and underscores' };
+  }
+
+  const email = generateEmail(username);
+
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { name } },
+    options: { data: { username, name } },
   });
 
   if (authError) {
@@ -44,16 +66,30 @@ export async function signup(formData: FormData) {
     return { error: 'Signup failed. Please try again.' };
   }
 
-  // Use a security definer RPC to create team + update profile + insert processes.
-  // This bypasses RLS since the session cookie may not be flushed yet in the same action.
-  const { error: rpcError } = await supabase.rpc('complete_signup', {
-    p_team_name: teamName,
-    p_team_year: teamYear,
-    p_user_name: name,
-  });
+  if (mode === 'join') {
+    const joinCode = (formData.get('join_code') as string)?.trim();
+    if (!joinCode) return { error: 'Join code is required' };
 
-  if (rpcError) {
-    return { error: rpcError.message };
+    const { error: rpcError } = await supabase.rpc('join_team', {
+      p_join_code: joinCode,
+      p_user_name: name,
+    });
+
+    if (rpcError) {
+      return { error: rpcError.message };
+    }
+  } else {
+    const teamName = (formData.get('team_name') as string)?.trim();
+    if (!teamName) return { error: 'Team name is required' };
+
+    const { error: rpcError } = await supabase.rpc('complete_signup', {
+      p_team_name: teamName,
+      p_user_name: name,
+    });
+
+    if (rpcError) {
+      return { error: rpcError.message };
+    }
   }
 
   revalidatePath('/', 'layout');

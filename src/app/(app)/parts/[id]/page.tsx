@@ -5,6 +5,7 @@ import StatusBadge from '@/components/StatusBadge';
 import type { PartStatus } from '@/lib/types';
 import { PART_STATUS_LABELS } from '@/lib/types';
 import UpdateStatusForm from './UpdateStatusForm';
+import DeletePartButton from './DeletePartButton';
 
 export default async function PartDetailPage({
   params,
@@ -67,19 +68,19 @@ export default async function PartDetailPage({
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
-        <Link href="/parts" className="hover:text-gray-700">Parts</Link>
+      <div className="flex items-center gap-2 text-sm text-gray-400 flex-wrap">
+        <Link href="/parts" className="hover:text-gray-300">Parts</Link>
         <span>›</span>
         {assembly && (
           <>
-            <Link href={`/assemblies/${assembly.id}`} className="hover:text-gray-700">
+            <Link href={`/assemblies/${assembly.id}`} className="hover:text-gray-300">
               {assembly.assembly_number}
             </Link>
             <span>›</span>
           </>
         )}
         {part.part_number && (
-          <span className="font-mono font-semibold text-blue-700">{part.part_number}</span>
+          <span className="font-mono font-semibold text-blue-400">{part.part_number}</span>
         )}
       </div>
 
@@ -88,35 +89,44 @@ export default async function PartDetailPage({
         <div>
           <div className="flex items-center gap-3 flex-wrap">
             {part.part_number && (
-              <span className="font-mono text-sm font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded">
+              <span className="font-mono text-sm font-semibold text-blue-400 bg-blue-900/30 px-2 py-1 rounded">
                 {part.part_number}
               </span>
             )}
-            <h1 className="text-2xl font-bold text-gray-900">{part.name}</h1>
+            <h1 className="text-2xl font-bold text-gray-100">{part.name}</h1>
             {part.naming_flagged && (
               <span
                 title="Part name may not conform to the expected format"
-                className="inline-flex items-center gap-1 text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full"
+                className="inline-flex items-center gap-1 text-xs bg-yellow-900/40 text-yellow-300 border border-yellow-700 px-2 py-0.5 rounded-full"
               >
                 ⚠ Name flagged
               </span>
             )}
           </div>
-          {part.description && <p className="mt-2 text-gray-600">{part.description}</p>}
+          {part.description && <p className="mt-2 text-gray-300">{part.description}</p>}
         </div>
-        <StatusBadge status={part.status as PartStatus} />
+        <div className="flex items-center gap-2 shrink-0">
+          <StatusBadge status={part.status as PartStatus} />
+          <Link
+            href={`/parts/${id}/edit`}
+            className="px-3 py-2 bg-gray-700 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors"
+          >
+            Edit
+          </Link>
+          <DeletePartButton partId={id} assemblyId={assembly?.id ?? ''} />
+        </div>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-6">
         {/* Details card */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Details</h2>
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 space-y-3">
+          <h2 className="font-semibold text-gray-100">Details</h2>
           <DetailRow label="Type" value={part.type === 'off_shelf' ? 'Off-the-Shelf' : 'Manufactured'} />
           {assembly && (
             <DetailRow
               label="Assembly"
               value={
-                <Link href={`/assemblies/${assembly.id}`} className="text-blue-600 hover:text-blue-700">
+                <Link href={`/assemblies/${assembly.id}`} className="text-blue-400 hover:text-blue-300">
                   {assembly.assembly_number} — {assembly.name}
                 </Link>
               }
@@ -143,7 +153,7 @@ export default async function PartDetailPage({
                       href={bom.cots_purchase_link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-700 text-sm truncate block"
+                      className="text-blue-400 hover:text-blue-300 text-sm truncate block"
                     >
                       🔗 Buy
                     </a>
@@ -160,7 +170,7 @@ export default async function PartDetailPage({
                   href={part.cad_link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-700"
+                  className="text-blue-400 hover:text-blue-300"
                 >
                   🔗 Open in CAD
                 </a>
@@ -170,17 +180,17 @@ export default async function PartDetailPage({
         </div>
 
         {/* Update status */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900">Update Status</h2>
+        <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 space-y-3">
+          <h2 className="font-semibold text-gray-100">Update Status</h2>
           <UpdateStatusForm partId={id} currentStatus={part.status as PartStatus} statuses={statuses} />
         </div>
       </div>
 
       {/* Status history */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 className="font-semibold text-gray-900 mb-4">Status History</h2>
+      <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">
+        <h2 className="font-semibold text-gray-100 mb-4">Status History</h2>
         {history.length === 0 ? (
-          <p className="text-gray-500 text-sm">No history yet.</p>
+          <p className="text-gray-400 text-sm">No history yet.</p>
         ) : (
           <div className="space-y-3">
             {history.map((entry) => {
@@ -190,10 +200,10 @@ export default async function PartDetailPage({
                   <div className="mt-1">
                     <StatusBadge status={entry.status as PartStatus} size="sm" />
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-400">
                     <span>{new Date(entry.changed_at).toLocaleString()}</span>
                     {changedBy && <span className="ml-1">by {changedBy.name}</span>}
-                    {entry.notes && <p className="mt-0.5 text-gray-600">{entry.notes}</p>}
+                    {entry.notes && <p className="mt-0.5 text-gray-300">{entry.notes}</p>}
                   </div>
                 </div>
               );
@@ -208,8 +218,8 @@ export default async function PartDetailPage({
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-4 text-sm">
-      <span className="text-gray-500 shrink-0">{label}</span>
-      <span className="text-gray-900 text-right">{value}</span>
+      <span className="text-gray-400 shrink-0">{label}</span>
+      <span className="text-gray-100 text-right">{value}</span>
     </div>
   );
 }

@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "FRC Part Tracker",
   description: "Track parts and subassemblies through design and manufacturing for FRC robots",
+  icons: { icon: "/logo.png" },
 };
 
 export default function RootLayout({
