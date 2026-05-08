@@ -156,22 +156,26 @@ These items close the Phase 1 gaps and add quality-of-life improvements before O
 
 ## Phase 3: OnShape Integration
 
-### 3a — Credentials & Connection
-- [ ] OnShape OAuth2 or API key configuration (per-team, stored encrypted in Supabase secrets or team settings JSONB)
-- [ ] Test connection UI on team page — confirm the API key is valid before import
+### 3a — Credentials & Connection ✓
+- [x] OnShape API key configuration (per-team, stored in `team_onshape_credentials` table, admin-only RLS)
+- [x] Test connection UI on team page — confirms API key is valid via `/api/onshape/test-connection`
+- [x] `save_onshape_credentials`, `get_onshape_credentials`, `has_onshape_credentials` RPCs (security definer)
 
-### 3b — BOM Import
-- [ ] Assembly BOM import: given an OnShape document/assembly URL, fetch all child parts with quantities via OnShape API
-- [ ] Auto-create assemblies and parts from BOM (preserving OnShape part names as `name`, locking to OnShape naming)
-- [ ] Auto-classify: COTS vs manufactured based on OnShape metadata (material, appearance, or naming patterns)
-- [ ] Auto-assign `PP[L]_P_NNN` numbers to manufactured parts sequentially within the active project
-- [ ] Set `naming_flagged = true` for any part whose OnShape name doesn't conform to team naming conventions
-- [ ] Store `onshape_doc_id`, `onshape_element_id`, `onshape_part_id` on parts and assemblies for sync
-- [ ] Isometric view image: fetch from OnShape API, cache in Supabase Storage, display on part detail page
+### 3b — BOM Import ✓
+- [x] Assembly BOM import: link assembly to OnShape URL, fetch BOM via `/api/onshape/import`
+- [x] Auto-create assemblies and parts from BOM (OnShape names preserved, naming conformance checked)
+- [x] Auto-classify: `itemSource = PURCHASED/BUY` → `off_shelf`; otherwise → `manufactured`
+- [x] Auto-assign `PP[L]_P_NNN` numbers to manufactured parts sequentially within the active project
+- [x] Set `naming_flagged = true` for any part whose OnShape name doesn't conform to team naming conventions
+- [x] Store `onshape_doc_id`, `onshape_element_id`, `onshape_part_id`, `onshape_workspace_id` on parts and assemblies
+- [x] Isometric view image: proxy route `/api/onshape/thumbnail?partId=` fetches shaded view on demand
+- [x] BOM cache table `onshape_bom_cache` with 5-minute TTL to avoid API rate limiting
 
-### 3c — Sync
-- [ ] Incremental sync: re-import BOM and show a diff (added/removed/qty-changed parts) before applying
-- [ ] OnShape API rate limiting + response caching layer (avoid re-fetching within configurable TTL)
+### 3c — Sync ✓
+- [x] Incremental sync: `/api/onshape/sync-diff` computes added/removed/qty-changed diff; stored in `onshape_sync_diffs`
+- [x] Diff review UI on assembly page (shows added/removed/changed with counts before applying)
+- [x] `/api/onshape/sync-apply` applies a diff: adds new parts, updates quantities, flags removed as On Hold
+- [x] OnShape API response caching layer (5-minute TTL shared between import and sync)
 - [ ] OnShape webhook or polling for real-time BOM change notifications (Phase 5 stretch)
 
 ---

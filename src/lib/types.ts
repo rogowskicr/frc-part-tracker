@@ -28,6 +28,9 @@ export interface Assembly {
   description: string | null;
   cad_link: string | null;
   onshape_doc_id: string | null;
+  onshape_element_id: string | null;
+  onshape_workspace_id: string | null;
+  onshape_last_sync: string | null;
   parent_assembly_id: string | null;
   team_id: string;
   created_by: string | null;
@@ -46,6 +49,10 @@ export interface Part {
   assigned_to: string | null;
   type: PartType;
   naming_flagged: boolean;
+  onshape_part_id: string | null;
+  onshape_element_id: string | null;
+  onshape_workspace_id: string | null;
+  onshape_thumbnail_url: string | null;
   team_id: string;
   created_by: string | null;
   created_at: string;

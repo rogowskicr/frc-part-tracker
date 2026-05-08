@@ -4,6 +4,7 @@ import Link from 'next/link';
 import CopyButton from '@/components/CopyButton';
 import MemberList from './MemberList';
 import ProjectPanel, { type TeamProject } from './SeasonPanel';
+import OnshapeCredentials from './OnshapeCredentials';
 
 export default async function TeamPage({
   params,
@@ -29,7 +30,7 @@ export default async function TeamPage({
 
   const isAdmin = myMembership.role === 'admin';
 
-  const [teamRes, membersRes, projectsRes, profileRes] = await Promise.all([
+  const [teamRes, membersRes, projectsRes, profileRes, hasCredsRes] = await Promise.all([
     supabase.from('teams').select('id, name, join_code').eq('id', id).single(),
     supabase.rpc('get_team_members', { p_team_id: id, p_caller_id: user.id }),
     supabase
@@ -43,6 +44,7 @@ export default async function TeamPage({
       .select('active_project_code')
       .eq('id', user.id)
       .single(),
+    supabase.rpc('has_onshape_credentials', { p_team_id: id }),
   ]);
 
   const team = teamRes.data;
@@ -57,6 +59,7 @@ export default async function TeamPage({
 
   const projects: TeamProject[] = (projectsRes.data ?? []) as TeamProject[];
   const activeCode: string | null = profileRes.data?.active_project_code ?? null;
+  const hasCredentials = !!(hasCredsRes.data);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -114,6 +117,13 @@ export default async function TeamPage({
         activeCode={activeCode}
         isAdmin={isAdmin}
         currentUserId={user.id}
+      />
+
+      {/* OnShape Integration */}
+      <OnshapeCredentials
+        teamId={id}
+        isAdmin={isAdmin}
+        hasCredentials={hasCredentials}
       />
 
       {/* Members */}

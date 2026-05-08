@@ -4,6 +4,7 @@ import Link from 'next/link';
 import StatusBadge from '@/components/StatusBadge';
 import type { PartStatus } from '@/lib/types';
 import DeleteAssemblyButton from './DeleteAssemblyButton';
+import OnshapePanel from './OnshapePanel';
 
 export default async function AssemblyDetailPage({
   params,
@@ -19,12 +20,13 @@ export default async function AssemblyDetailPage({
   if (!user) redirect('/login');
 
   const [profileRes, assemblyRes] = await Promise.all([
-    supabase.from('user_profiles').select('role').eq('id', user.id).single(),
+    supabase.from('user_profiles').select('role, team_id').eq('id', user.id).single(),
     supabase
       .from('assemblies')
       .select(
         `
         id, assembly_number, name, description, cad_link, created_at,
+        onshape_doc_id, onshape_workspace_id, onshape_element_id, onshape_last_sync,
         parent:parent_assembly_id(id, assembly_number, name)
       `
       )
@@ -36,8 +38,14 @@ export default async function AssemblyDetailPage({
 
   const assembly = assemblyRes.data;
   const role = profileRes.data?.role ?? 'viewer';
+  const teamId = profileRes.data?.team_id ?? null;
   const canMutate = role === 'admin' || role === 'engineer';
   const isAdmin = role === 'admin';
+
+  const hasCredsRes = teamId
+    ? await supabase.rpc('has_onshape_credentials', { p_team_id: teamId })
+    : { data: false };
+  const hasOnshapeCredentials = !!(hasCredsRes.data);
 
   const { data: parts } = await supabase
     .from('parts')
@@ -164,6 +172,17 @@ export default async function AssemblyDetailPage({
           })}
         </div>
       )}
+
+      {/* OnShape panel */}
+      <OnshapePanel
+        assemblyId={id}
+        canMutate={canMutate}
+        hasOnshapeCredentials={hasOnshapeCredentials}
+        currentDocId={assembly.onshape_doc_id ?? null}
+        currentWorkspaceId={assembly.onshape_workspace_id ?? null}
+        currentElementId={assembly.onshape_element_id ?? null}
+        lastSync={assembly.onshape_last_sync ?? null}
+      />
 
       {/* Parts table */}
       <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">

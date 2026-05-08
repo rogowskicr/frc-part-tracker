@@ -13,7 +13,17 @@
       "Skill(update-config:*)",
       "Bash(Copy-Item \"c:\\\\Users\\\\conno\\\\Documents\\\\FRC Part Tracker\\\\public\\\\logo.png\" \"c:\\\\Users\\\\conno\\\\Documents\\\\FRC Part Tracker\\\\src\\\\app\\\\icon.png\")",
       "Bash(npx tsc *)",
-      "Bash(node node_modules/typescript/bin/tsc --noEmit)"
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(Sort-Object)",
+      "Bash(supabase db *)",
+      "mcp__supabase__list_migrations",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__apply_migration",
+      "Bash(node ./node_modules/.bin/tsc --noEmit)",
+      "WebFetch(domain:onshape-public.github.io)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api *)",
+      "WebSearch"
     ]
   }
 }
