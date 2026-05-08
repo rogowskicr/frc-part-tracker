@@ -20,7 +20,8 @@ export default async function PartDetailPage({
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const [partRes, historyRes] = await Promise.all([
+  const [profileRes, partRes, historyRes] = await Promise.all([
+    supabase.from('user_profiles').select('role').eq('id', user.id).single(),
     supabase
       .from('parts')
       .select(
@@ -45,6 +46,10 @@ export default async function PartDetailPage({
 
   const part = partRes.data;
   const history = historyRes.data ?? [];
+  const role = profileRes.data?.role ?? 'viewer';
+  const canMutate = role === 'admin' || role === 'engineer';
+  const isAdmin = role === 'admin';
+
   const assembly = part.assembly as unknown as { id: string; assembly_number: string; name: string } | null;
   const assignedUser = part.assigned_user as unknown as { id: string; name: string } | null;
   const bom = (
@@ -107,13 +112,15 @@ export default async function PartDetailPage({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <StatusBadge status={part.status as PartStatus} />
-          <Link
-            href={`/parts/${id}/edit`}
-            className="px-3 py-2 bg-gray-700 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors"
-          >
-            Edit
-          </Link>
-          <DeletePartButton partId={id} assemblyId={assembly?.id ?? ''} />
+          {canMutate && (
+            <Link
+              href={`/parts/${id}/edit`}
+              className="px-3 py-2 bg-gray-700 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors"
+            >
+              Edit
+            </Link>
+          )}
+          {isAdmin && <DeletePartButton partId={id} assemblyId={assembly?.id ?? ''} />}
         </div>
       </div>
 
@@ -181,8 +188,16 @@ export default async function PartDetailPage({
 
         {/* Update status */}
         <div className="bg-gray-800 rounded-xl border border-gray-700 p-5 space-y-3">
-          <h2 className="font-semibold text-gray-100">Update Status</h2>
-          <UpdateStatusForm partId={id} currentStatus={part.status as PartStatus} statuses={statuses} />
+          <h2 className="font-semibold text-gray-100">Status</h2>
+          {canMutate ? (
+            <UpdateStatusForm partId={id} currentStatus={part.status as PartStatus} statuses={statuses} />
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-gray-400">Current status</p>
+              <StatusBadge status={part.status as PartStatus} />
+              <p className="text-xs text-gray-500 mt-2">Viewers cannot update status.</p>
+            </div>
+          )}
         </div>
       </div>
 

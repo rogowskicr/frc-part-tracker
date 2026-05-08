@@ -20,6 +20,7 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single();
 
+
   const { data: membershipsRaw } = await supabase
     .from('team_memberships')
     .select('role, team_id, teams(id, name, join_code)')
@@ -244,8 +245,8 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Quick actions — only when a project is active */}
-      {activeCode ? (
+      {/* Quick actions — only when a project is active and user can mutate */}
+      {activeCode && profile.role !== 'viewer' ? (
         <div className="flex gap-3">
           <Link
             href="/assemblies/new"
@@ -262,10 +263,16 @@ export default async function DashboardPage() {
         </div>
       ) : (
         <div className="flex gap-3">
-          <span className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed">
+          <span
+            title={!activeCode ? 'Select a project first' : 'Viewers cannot create assemblies'}
+            className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed"
+          >
             + New Assembly
           </span>
-          <span className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed">
+          <span
+            title={!activeCode ? 'Select a project first' : 'Viewers cannot create parts'}
+            className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed"
+          >
             + New Part
           </span>
         </div>

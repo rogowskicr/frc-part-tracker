@@ -121,11 +121,11 @@ A cloud-hosted web application for FRC teams to track parts and subassemblies th
 - [x] Teams panel on dashboard: shows all teams user belongs to, active team highlighted, switch/leave buttons, join form, create form
 
 ### Known Phase 1 Gaps
-- [ ] **Viewer role UI enforcement**: all authenticated members can currently mutate data regardless of role; viewer guard needed on forms and action buttons
-- [ ] **Dashboard not project-scoped**: stat cards and "My Assigned Parts" list show all-project data even when an active project is set
-- [ ] **Signup still collects Season Year**: the "Create a team" path in signup passes `team_year` to `complete_signup`. Since projects are now the canonical year container, this field is redundant and confusing. Signup should create a team with no year and prompt the admin to add their first project from the team page after signing in.
-- [ ] **Switching active team doesn't clear active project**: a stale `active_project_code` from the previous team remains set and may not match any project on the new team
-- [ ] **`getSeasonYY()` still referenced** in some form hints alongside the newer `projectCode()` — should be unified
+- [x] **Viewer role UI enforcement**: server actions check role before mutations; Edit/Delete/Add buttons hidden for viewers; edit pages redirect viewers; status update form hidden for viewers
+- [x] **Dashboard not project-scoped**: stat cards and "My Assigned Parts" now filtered by `active_project_code` when set
+- [x] **Signup still collects Season Year**: removed; `complete_signup` creates team with no year; admin adds first project from team page
+- [x] **Switching active team doesn't clear active project**: `switch_active_team` RPC clears `active_project_code` (migration 009/010)
+- [x] **`getSeasonYY()` still referenced**: deprecated export only remains in `validation.ts`; all forms use `defaultProjectCode()` / `projectCode()`
 
 ---
 
@@ -134,23 +134,23 @@ A cloud-hosted web application for FRC teams to track parts and subassemblies th
 These items close the Phase 1 gaps and add quality-of-life improvements before OnShape integration begins.
 
 ### 2a — Project Scoping Cleanup
-- [ ] Remove "Season Year" field from signup; `complete_signup` creates team with no year; admin adds first project from team page
-- [ ] Dashboard stat cards and "My Assigned Parts" filter by `active_project_code` when set
-- [ ] Clear `active_project_code` when user switches active team (in `switch_active_team` RPC or client action)
-- [ ] New Part / New Assembly forms: show the active project code prefix as a locked label rather than a free-form input when a project is active
-- [ ] Unify `getSeasonYY()` usages → `projectCode()` throughout
+- [x] Remove "Season Year" field from signup; `complete_signup` creates team with no year; admin adds first project from team page
+- [x] Dashboard stat cards and "My Assigned Parts" filter by `active_project_code` when set
+- [x] Clear `active_project_code` when user switches active team (in `switch_active_team` RPC or client action)
+- [x] New Part / New Assembly forms: locked `{code}_P_` / `{code}_A_` prefix chip + NNN input when a project is active
+- [x] Unify `getSeasonYY()` usages → `projectCode()` throughout
 
 ### 2b — Viewer Role Enforcement
-- [ ] Read-only guard on all server actions: check `my_role()` before any INSERT/UPDATE/DELETE, return error if viewer
-- [ ] UI: hide or disable mutating buttons (Edit, Delete, New Part, Status update) for viewer-role users
-- [ ] RLS policies: tighten insert/update/delete policies to reject viewer role at the DB level (currently `engineer | admin` required but not verified for all tables)
+- [x] Read-only guard on all server actions: check role before any INSERT/UPDATE/DELETE, return error if viewer
+- [x] UI: Edit/Delete/New Part/New Assembly/Status-update form hidden/disabled for viewer-role users
+- [x] RLS policies: `part_status_history` insert policy tightened to require `admin | engineer` (migration 012)
 
 ### 2c — UX Hardening
-- [ ] Error boundaries around Supabase queries — graceful fallback UI instead of blank pages on network failure
+- [x] Error boundaries: `error.tsx` added for app routes; `global-error.tsx` at root
 - [ ] Mobile layout audit: navbar collapses, forms scroll properly, team page is usable on small screens
-- [ ] Enforce part number uniqueness within a project (currently unique per `(team_id, part_number)` only at DB level; surface conflicts in UI)
-- [ ] Assembly page: inline status summary (count of parts per status) in the header
-- [ ] Part detail page: allow changing the assigned assembly (currently locked after creation)
+- [ ] Enforce part number uniqueness within a project — surface conflicts in UI
+- [x] Assembly page: inline status summary (count of parts per status) in the header
+- [x] Part detail page: allow changing the assigned assembly via edit form
 
 ---
 

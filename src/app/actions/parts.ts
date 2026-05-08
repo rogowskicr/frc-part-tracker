@@ -16,11 +16,12 @@ export async function createPart(formData: FormData) {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('team_id')
+    .select('team_id, role')
     .eq('id', user.id)
     .single();
 
   if (!profile?.team_id) return { error: 'No team found' };
+  if (profile.role === 'viewer') return { error: 'Viewers cannot create parts' };
 
   const type = formData.get('type') as 'manufactured' | 'off_shelf';
   const name = (formData.get('name') as string).trim();
@@ -100,6 +101,14 @@ export async function updatePartStatus(partId: string, status: PartStatus, notes
   } = await supabase.auth.getUser();
   if (!user) return { error: 'Not authenticated' };
 
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot update part status' };
+
   const { error } = await supabase.from('parts').update({ status }).eq('id', partId);
   if (error) return { error: error.message };
 
@@ -117,6 +126,20 @@ export async function updatePartStatus(partId: string, status: PartStatus, notes
 
 export async function updatePartAssignment(partId: string, userId: string | null) {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot update assignments' };
+
   const { error } = await supabase
     .from('parts')
     .update({ assigned_to: userId })
@@ -128,6 +151,20 @@ export async function updatePartAssignment(partId: string, userId: string | null
 
 export async function deletePart(id: string, assemblyId: string) {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.role !== 'admin') return { error: 'Only admins can delete parts' };
+
   const { error } = await supabase.from('parts').delete().eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/parts');
@@ -143,11 +180,20 @@ export async function updatePart(id: string, formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { error: 'Not authenticated' };
 
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot edit parts' };
+
   const name = (formData.get('name') as string).trim();
   const description = (formData.get('description') as string | null)?.trim() || null;
   const cad_link = (formData.get('cad_link') as string | null)?.trim() || null;
   const assigned_to = (formData.get('assigned_to') as string | null) || null;
   const type = formData.get('type') as 'manufactured' | 'off_shelf';
+  const assembly_id = (formData.get('assembly_id') as string | null) || null;
 
   let naming_flagged: boolean | undefined;
   if (type === 'manufactured') {
@@ -157,7 +203,9 @@ export async function updatePart(id: string, formData: FormData) {
 
   const updateFields: Record<string, unknown> = { name, description, cad_link, assigned_to: assigned_to || null };
   if (naming_flagged !== undefined) updateFields.naming_flagged = naming_flagged;
+  if (assembly_id) updateFields.assembly_id = assembly_id;
 
+  const { data: existing } = await supabase.from('parts').select('assembly_id').eq('id', id).single();
   const { error } = await supabase.from('parts').update(updateFields).eq('id', id);
   if (error) return { error: error.message };
 
@@ -167,16 +215,23 @@ export async function updatePart(id: string, formData: FormData) {
   const cots_supplier_part_number = (formData.get('cots_supplier_part_number') as string | null)?.trim() || null;
   const cots_purchase_link = (formData.get('cots_purchase_link') as string | null)?.trim() || null;
 
-  await supabase.from('bom_items').update({
+  const bomUpdate: Record<string, unknown> = {
     onshape_quantity,
     cots_quantity_spare,
     cots_vendor,
     cots_supplier_part_number,
     cots_purchase_link,
-  }).eq('part_id', id);
+  };
+  if (assembly_id) bomUpdate.assembly_id = assembly_id;
+
+  await supabase.from('bom_items').update(bomUpdate).eq('part_id', id);
 
   revalidatePath(`/parts/${id}`);
   revalidatePath('/parts');
+  if (assembly_id && existing?.assembly_id && assembly_id !== existing.assembly_id) {
+    revalidatePath(`/assemblies/${existing.assembly_id}`);
+    revalidatePath(`/assemblies/${assembly_id}`);
+  }
   redirect(`/parts/${id}`);
 }
 

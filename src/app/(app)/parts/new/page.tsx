@@ -6,17 +6,17 @@ import { createPart } from '@/app/actions/parts';
 import { validatePartNumber, defaultProjectCode } from '@/lib/validation';
 import { DEFAULT_COTS_VENDORS } from '@/lib/types';
 
-async function fetchActiveCode(): Promise<string> {
+async function fetchActiveCode(): Promise<string | null> {
   try {
     const res = await fetch('/api/active-season');
     if (res.ok) {
       const { code } = await res.json();
-      if (code) return code;
+      return code ?? null;
     }
   } catch {
-    // fall through to default
+    // fall through
   }
-  return defaultProjectCode();
+  return null;
 }
 
 interface Assembly {
@@ -41,9 +41,13 @@ export default function NewPartPage({ searchParams }: Props) {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [partType, setPartType] = useState<'manufactured' | 'off_shelf'>('manufactured');
   const [partNumber, setPartNumber] = useState('');
+  const [partNumberSuffix, setPartNumberSuffix] = useState('');
   const [numberError, setNumberError] = useState<string | null>(null);
   const [selectedAssembly, setSelectedAssembly] = useState('');
-  const [activeCode, setActiveCode] = useState<string>(defaultProjectCode());
+  const [activeCode, setActiveCode] = useState<string | null>(null);
+
+  // lockedPrefix is e.g. "26_P_" when a project is active
+  const lockedPrefix = activeCode ? `${activeCode}_P_` : null;
 
   useEffect(() => {
     async function load() {
@@ -66,7 +70,7 @@ export default function NewPartPage({ searchParams }: Props) {
 
         if (defaultAssembly) {
           setSelectedAssembly(defaultAssembly.id);
-          suggestPartNumber(defaultAssembly.assembly_number);
+          await suggestPartNumber(defaultAssembly.assembly_number, code);
         }
       }
 
@@ -78,12 +82,16 @@ export default function NewPartPage({ searchParams }: Props) {
     load();
   }, []);
 
-  async function suggestPartNumber(assemblyNumber: string) {
+  async function suggestPartNumber(assemblyNumber: string, code: string | null) {
     if (!assemblyNumber) return;
     const res = await fetch(`/api/next-part-number?assembly=${encodeURIComponent(assemblyNumber)}`);
     if (res.ok) {
       const { number } = await res.json();
       setPartNumber(number);
+      if (code) {
+        const prefix = `${code}_P_`;
+        setPartNumberSuffix(number.startsWith(prefix) ? number.slice(prefix.length) : number.split('_').pop() ?? '');
+      }
     }
   }
 
@@ -91,32 +99,40 @@ export default function NewPartPage({ searchParams }: Props) {
     setSelectedAssembly(assemblyId);
     const assembly = assemblies.find((a) => a.id === assemblyId);
     if (assembly && partType === 'manufactured') {
-      await suggestPartNumber(assembly.assembly_number);
+      await suggestPartNumber(assembly.assembly_number, activeCode);
     }
   }
 
-  function handleNumberChange(val: string) {
+  function handleSuffixChange(val: string) {
+    const cleaned = val.replace(/\D/g, '');
+    setPartNumberSuffix(cleaned);
+    const full = lockedPrefix ? `${lockedPrefix}${cleaned}` : cleaned;
+    setPartNumber(full.toUpperCase());
+    if (partType === 'manufactured') {
+      setNumberError(validatePartNumber(full.trim().toUpperCase()));
+    }
+  }
+
+  function handleFreeNumberChange(val: string) {
     setPartNumber(val);
     if (partType === 'manufactured') {
-      const err = validatePartNumber(val.trim().toUpperCase());
-      setNumberError(err);
+      setNumberError(validatePartNumber(val.trim().toUpperCase()));
     }
   }
 
   async function handleSubmit(formData: FormData) {
     if (partType === 'manufactured') {
-      const err = validatePartNumber(partNumber.trim().toUpperCase());
+      const full = (lockedPrefix ? `${lockedPrefix}${partNumberSuffix}` : partNumber).toUpperCase();
+      const err = validatePartNumber(full.trim());
       if (err) {
         setNumberError(err);
         return;
       }
+      formData.set('part_number', full);
     }
     setLoading(true);
     setError(null);
     formData.set('type', partType);
-    if (partType === 'manufactured') {
-      formData.set('part_number', partNumber.toUpperCase());
-    }
     const result = await createPart(formData);
     if (result?.error) {
       setError(result.error);
@@ -191,21 +207,40 @@ export default function NewPartPage({ searchParams }: Props) {
               <label htmlFor="part_number" className="block text-sm font-medium text-gray-200 mb-1">
                 Part Number <span className="text-red-400">*</span>
               </label>
-              <input
-                id="part_number"
-                name="part_number"
-                type="text"
-                value={partNumber}
-                onChange={(e) => handleNumberChange(e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase bg-gray-900 text-gray-100 placeholder-gray-500 ${
-                  numberError ? 'border-red-500' : 'border-gray-600'
-                }`}
-                placeholder={`${activeCode}_P_101`}
-              />
-              {numberError ? (
-                <p className="mt-1 text-xs text-red-600">{numberError}</p>
+              {lockedPrefix ? (
+                <div className={`flex items-center border rounded-lg overflow-hidden font-mono text-sm ${numberError ? 'border-red-500' : 'border-gray-600'}`}>
+                  <span className="px-3 py-2 bg-gray-700 text-gray-400 border-r border-gray-600 shrink-0 select-none">
+                    {lockedPrefix}
+                  </span>
+                  <input
+                    id="part_number"
+                    type="text"
+                    inputMode="numeric"
+                    value={partNumberSuffix}
+                    onChange={(e) => handleSuffixChange(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-gray-900 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset uppercase"
+                    placeholder="101"
+                  />
+                </div>
               ) : (
-                <p className="mt-1 text-xs text-gray-400">Format: {activeCode}_P_NNN</p>
+                <input
+                  id="part_number"
+                  name="part_number"
+                  type="text"
+                  value={partNumber}
+                  onChange={(e) => handleFreeNumberChange(e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase bg-gray-900 text-gray-100 placeholder-gray-500 ${
+                    numberError ? 'border-red-500' : 'border-gray-600'
+                  }`}
+                  placeholder={`${defaultProjectCode()}_P_101`}
+                />
+              )}
+              {numberError ? (
+                <p className="mt-1 text-xs text-red-400">{numberError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-400">
+                  {lockedPrefix ? `Enter the 3+ digit number` : `Format: YY_P_NNN`}
+                </p>
               )}
             </div>
           )}

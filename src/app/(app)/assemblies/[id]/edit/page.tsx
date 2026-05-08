@@ -15,6 +15,13 @@ export default async function EditAssemblyPage({
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (profile?.role === 'viewer') redirect(`/assemblies/${id}`);
+
   const [assemblyRes, allAssembliesRes] = await Promise.all([
     supabase
       .from('assemblies')

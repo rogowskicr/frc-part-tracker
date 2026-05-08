@@ -15,11 +15,12 @@ export async function createAssembly(formData: FormData) {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('team_id')
+    .select('team_id, role')
     .eq('id', user.id)
     .single();
 
   if (!profile?.team_id) return { error: 'No team found' };
+  if (profile.role === 'viewer') return { error: 'Viewers cannot create assemblies' };
 
   const assembly_number = (formData.get('assembly_number') as string).trim().toUpperCase();
   const name = (formData.get('name') as string).trim();
@@ -58,6 +59,14 @@ export async function updateAssembly(id: string, formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { error: 'Not authenticated' };
 
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot edit assemblies' };
+
   const name = (formData.get('name') as string).trim();
   const description = (formData.get('description') as string | null)?.trim() || null;
   const cad_link = (formData.get('cad_link') as string | null)?.trim() || null;
@@ -77,6 +86,19 @@ export async function updateAssembly(id: string, formData: FormData) {
 
 export async function deleteAssembly(id: string) {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.role !== 'admin') return { error: 'Only admins can delete assemblies' };
 
   const { error } = await supabase.from('assemblies').delete().eq('id', id);
   if (error) return { error: error.message };

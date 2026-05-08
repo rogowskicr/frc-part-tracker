@@ -17,17 +17,18 @@ export default async function EditPartPage({
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('team_id')
+    .select('team_id, role')
     .eq('id', user.id)
     .single();
 
   if (!profile?.team_id) redirect('/login');
+  if (profile.role === 'viewer') redirect(`/parts/${id}`);
 
-  const [partRes, membersRes] = await Promise.all([
+  const [partRes, membersRes, assembliesRes] = await Promise.all([
     supabase
       .from('parts')
       .select(
-        `id, part_number, name, description, type, cad_link, assigned_to,
+        `id, part_number, name, description, type, cad_link, assigned_to, assembly_id,
          bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_supplier_part_number, cots_purchase_link)`
       )
       .eq('id', id)
@@ -37,6 +38,11 @@ export default async function EditPartPage({
       .select('id, name')
       .eq('team_id', profile.team_id)
       .order('name'),
+    supabase
+      .from('assemblies')
+      .select('id, assembly_number, name')
+      .eq('team_id', profile.team_id)
+      .order('assembly_number'),
   ]);
 
   if (!partRes.data) notFound();
@@ -60,9 +66,11 @@ export default async function EditPartPage({
         type: part.type as 'manufactured' | 'off_shelf',
         cad_link: part.cad_link,
         assigned_to: part.assigned_to,
+        assembly_id: part.assembly_id,
       }}
       bom={bom}
       teamMembers={membersRes.data ?? []}
+      assemblies={assembliesRes.data ?? []}
     />
   );
 }

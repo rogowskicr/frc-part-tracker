@@ -5,17 +5,17 @@ import Link from 'next/link';
 import { createAssembly } from '@/app/actions/assemblies';
 import { validateAssemblyNumber, defaultProjectCode } from '@/lib/validation';
 
-async function fetchActiveCode(): Promise<string> {
+async function fetchActiveCode(): Promise<string | null> {
   try {
     const res = await fetch('/api/active-season');
     if (res.ok) {
       const { code } = await res.json();
-      if (code) return code;
+      return code ?? null;
     }
   } catch {
-    // fall through to default
+    // fall through
   }
-  return defaultProjectCode();
+  return null;
 }
 
 interface Assembly {
@@ -34,8 +34,11 @@ export default function NewAssemblyPage({ searchParams }: Props) {
   const [loading, setLoading]       = useState(false);
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [assemblyNumber, setAssemblyNumber] = useState('');
+  const [numberSuffix, setNumberSuffix]     = useState('');
   const [numberError, setNumberError]       = useState<string | null>(null);
-  const [activeCode, setActiveCode] = useState<string>(defaultProjectCode());
+  const [activeCode, setActiveCode] = useState<string | null>(null);
+
+  const lockedPrefix = activeCode ? `${activeCode}_A_` : null;
 
   useEffect(() => {
     async function load() {
@@ -48,29 +51,44 @@ export default function NewAssemblyPage({ searchParams }: Props) {
         const data: Assembly[] = await res.json();
         setAssemblies(data);
         const { nextTopLevelAssemblyNumber } = await import('@/lib/validation');
-        setAssemblyNumber(
-          nextTopLevelAssemblyNumber(code, data.map((a) => a.assembly_number))
-        );
+        const effectiveCode = code ?? defaultProjectCode();
+        const suggested = nextTopLevelAssemblyNumber(effectiveCode, data.map((a) => a.assembly_number));
+        setAssemblyNumber(suggested);
+        if (code) {
+          // Extract just the NNN part for the suffix input
+          const prefix = `${code}_A_`;
+          setNumberSuffix(suggested.startsWith(prefix) ? suggested.slice(prefix.length) : suggested.split('_').pop() ?? '');
+        }
       }
     }
     load();
   }, []);
 
-  function handleNumberChange(val: string) {
+  function handleSuffixChange(val: string) {
+    const cleaned = val.replace(/\D/g, '');
+    setNumberSuffix(cleaned);
+    const full = lockedPrefix ? `${lockedPrefix}${cleaned}` : cleaned;
+    setAssemblyNumber(full.toUpperCase());
+    const err = validateAssemblyNumber(full.trim().toUpperCase());
+    setNumberError(err);
+  }
+
+  function handleFreeNumberChange(val: string) {
     setAssemblyNumber(val);
     const err = validateAssemblyNumber(val.trim().toUpperCase());
     setNumberError(err);
   }
 
   async function handleSubmit(formData: FormData) {
-    const err = validateAssemblyNumber(assemblyNumber.trim().toUpperCase());
+    const full = (lockedPrefix ? `${lockedPrefix}${numberSuffix}` : assemblyNumber).toUpperCase();
+    const err = validateAssemblyNumber(full.trim());
     if (err) {
       setNumberError(err);
       return;
     }
     setLoading(true);
     setError(null);
-    formData.set('assembly_number', assemblyNumber.toUpperCase());
+    formData.set('assembly_number', full);
     const result = await createAssembly(formData);
     if (result?.error) {
       setError(result.error);
@@ -100,23 +118,42 @@ export default function NewAssemblyPage({ searchParams }: Props) {
             <label htmlFor="assembly_number" className="block text-sm font-medium text-gray-200 mb-1">
               Assembly Number <span className="text-red-400">*</span>
             </label>
-            <input
-              id="assembly_number"
-              name="assembly_number"
-              type="text"
-              required
-              value={assemblyNumber}
-              onChange={(e) => handleNumberChange(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase bg-gray-900 text-gray-100 placeholder-gray-500 ${
-                numberError ? 'border-red-500' : 'border-gray-600'
-              }`}
-              placeholder={`${activeCode}_A_100`}
-            />
+            {lockedPrefix ? (
+              <div className={`flex items-center border rounded-lg overflow-hidden font-mono text-sm ${numberError ? 'border-red-500' : 'border-gray-600'}`}>
+                <span className="px-3 py-2 bg-gray-700 text-gray-400 border-r border-gray-600 shrink-0 select-none">
+                  {lockedPrefix}
+                </span>
+                <input
+                  id="assembly_number"
+                  type="text"
+                  inputMode="numeric"
+                  value={numberSuffix}
+                  onChange={(e) => handleSuffixChange(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-gray-900 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset uppercase"
+                  placeholder="100"
+                />
+              </div>
+            ) : (
+              <input
+                id="assembly_number"
+                name="assembly_number"
+                type="text"
+                required
+                value={assemblyNumber}
+                onChange={(e) => handleFreeNumberChange(e.target.value)}
+                className={`w-full px-3 py-2 border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase bg-gray-900 text-gray-100 placeholder-gray-500 ${
+                  numberError ? 'border-red-500' : 'border-gray-600'
+                }`}
+                placeholder={`${defaultProjectCode()}_A_100`}
+              />
+            )}
             {numberError ? (
-              <p className="mt-1 text-xs text-red-600">{numberError}</p>
+              <p className="mt-1 text-xs text-red-400">{numberError}</p>
             ) : (
               <p className="mt-1 text-xs text-gray-400">
-                Format: {activeCode}_A_NNN — top-level assemblies use multiples of 100
+                {lockedPrefix
+                  ? `Top-level assemblies use multiples of 100 (e.g. 100, 200)`
+                  : `Format: YY_A_NNN — top-level assemblies use multiples of 100`}
               </p>
             )}
           </div>

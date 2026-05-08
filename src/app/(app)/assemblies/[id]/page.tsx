@@ -18,18 +18,26 @@ export default async function AssemblyDetailPage({
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const { data: assembly } = await supabase
-    .from('assemblies')
-    .select(
+  const [profileRes, assemblyRes] = await Promise.all([
+    supabase.from('user_profiles').select('role').eq('id', user.id).single(),
+    supabase
+      .from('assemblies')
+      .select(
+        `
+        id, assembly_number, name, description, cad_link, created_at,
+        parent:parent_assembly_id(id, assembly_number, name)
       `
-      id, assembly_number, name, description, cad_link, created_at,
-      parent:parent_assembly_id(id, assembly_number, name)
-    `
-    )
-    .eq('id', id)
-    .single();
+      )
+      .eq('id', id)
+      .single(),
+  ]);
 
-  if (!assembly) notFound();
+  if (!assemblyRes.data) notFound();
+
+  const assembly = assemblyRes.data;
+  const role = profileRes.data?.role ?? 'viewer';
+  const canMutate = role === 'admin' || role === 'engineer';
+  const isAdmin = role === 'admin';
 
   const { data: parts } = await supabase
     .from('parts')
@@ -44,6 +52,30 @@ export default async function AssemblyDetailPage({
     .order('part_number', { ascending: true });
 
   const parent = assembly.parent as unknown as { id: string; assembly_number: string; name: string } | null;
+
+  // Status summary counts
+  const statusCounts = (parts ?? []).reduce(
+    (acc, p) => {
+      acc[p.status as PartStatus] = (acc[p.status as PartStatus] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<PartStatus, number>
+  );
+  const statusOrder: PartStatus[] = ['design', 'ready_for_manufacturing', 'in_progress', 'complete', 'on_hold'];
+  const statusLabels: Record<PartStatus, string> = {
+    design: 'Design',
+    ready_for_manufacturing: 'Mfg Ready',
+    in_progress: 'In Progress',
+    complete: 'Complete',
+    on_hold: 'On Hold',
+  };
+  const statusColors: Record<PartStatus, string> = {
+    design: 'bg-blue-900/40 text-blue-300',
+    ready_for_manufacturing: 'bg-yellow-900/40 text-yellow-300',
+    in_progress: 'bg-orange-900/40 text-orange-300',
+    complete: 'bg-green-900/40 text-green-300',
+    on_hold: 'bg-gray-700 text-gray-300',
+  };
 
   return (
     <div className="space-y-6">
@@ -88,27 +120,50 @@ export default async function AssemblyDetailPage({
           )}
         </div>
         <div className="flex gap-2 shrink-0 flex-wrap">
-          <Link
-            href={`/parts/new?assembly=${id}`}
-            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            + Add Part
-          </Link>
-          <Link
-            href={`/assemblies/new?parent=${id}`}
-            className="px-3 py-2 bg-gray-800 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
-          >
-            + Sub-Assembly
-          </Link>
-          <Link
-            href={`/assemblies/${id}/edit`}
-            className="px-3 py-2 bg-gray-700 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors"
-          >
-            Edit
-          </Link>
-          <DeleteAssemblyButton assemblyId={id} />
+          {canMutate && (
+            <>
+              <Link
+                href={`/parts/new?assembly=${id}`}
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                + Add Part
+              </Link>
+              <Link
+                href={`/assemblies/new?parent=${id}`}
+                className="px-3 py-2 bg-gray-800 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
+              >
+                + Sub-Assembly
+              </Link>
+              <Link
+                href={`/assemblies/${id}/edit`}
+                className="px-3 py-2 bg-gray-700 border border-gray-600 text-gray-200 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors"
+              >
+                Edit
+              </Link>
+            </>
+          )}
+          {isAdmin && <DeleteAssemblyButton assemblyId={id} />}
         </div>
       </div>
+
+      {/* Status summary */}
+      {(parts?.length ?? 0) > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {statusOrder.map((s) => {
+            const count = statusCounts[s] ?? 0;
+            if (count === 0) return null;
+            return (
+              <span
+                key={s}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${statusColors[s]}`}
+              >
+                <span className="font-bold">{count}</span>
+                {statusLabels[s]}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Parts table */}
       <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
@@ -121,9 +176,11 @@ export default async function AssemblyDetailPage({
         {!parts || parts.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">
             No parts yet.{' '}
-            <Link href={`/parts/new?assembly=${id}`} className="text-blue-400 hover:text-blue-300">
-              Add the first part
-            </Link>
+            {canMutate && (
+              <Link href={`/parts/new?assembly=${id}`} className="text-blue-400 hover:text-blue-300">
+                Add the first part
+              </Link>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-gray-700">

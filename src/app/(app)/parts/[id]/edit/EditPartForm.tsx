@@ -14,6 +14,7 @@ interface Props {
     type: 'manufactured' | 'off_shelf';
     cad_link: string | null;
     assigned_to: string | null;
+    assembly_id: string;
   };
   bom: {
     onshape_quantity: number;
@@ -23,9 +24,10 @@ interface Props {
     cots_purchase_link: string | null;
   } | null;
   teamMembers: { id: string; name: string }[];
+  assemblies: { id: string; assembly_number: string; name: string }[];
 }
 
-export default function EditPartForm({ part, bom, teamMembers }: Props) {
+export default function EditPartForm({ part, bom, teamMembers, assemblies }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -61,6 +63,33 @@ export default function EditPartForm({ part, bom, teamMembers }: Props) {
               {error}
             </div>
           )}
+
+          {part.part_number && (
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1">Part Number</label>
+              <p className="font-mono text-sm text-gray-300 px-3 py-2 bg-gray-900/50 border border-gray-700 rounded-lg">
+                {part.part_number}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="assembly_id" className="block text-sm font-medium text-gray-200 mb-1">
+              Assembly
+            </label>
+            <select
+              id="assembly_id"
+              name="assembly_id"
+              defaultValue={part.assembly_id}
+              className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
+            >
+              {assemblies.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.assembly_number} — {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-200 mb-1">

@@ -20,13 +20,14 @@ export default async function PartsPage({
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('team_id, active_project_code')
+    .select('team_id, active_project_code, role')
     .eq('id', user.id)
     .single();
 
   if (!profile?.team_id) return <div className="text-gray-400 py-8">No team assigned.</div>;
 
   const activeCode = profile.active_project_code ?? null;
+  const canCreate = activeCode && profile.role !== 'viewer';
 
   // When a project is active, pre-fetch the assembly IDs for that project prefix so
   // parts are filtered to only items belonging to that project.
@@ -91,7 +92,7 @@ export default async function PartsPage({
             {activeCode ? ` · Project ${activeCode}` : ''}
           </p>
         </div>
-        {activeCode ? (
+        {canCreate ? (
           <Link
             href="/parts/new"
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -100,7 +101,7 @@ export default async function PartsPage({
           </Link>
         ) : (
           <span
-            title="Select a season from the Team page first"
+            title={!activeCode ? 'Select a project from the Team page first' : 'Viewers cannot create parts'}
             className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-600 rounded-lg text-sm font-medium cursor-not-allowed"
           >
             + New Part

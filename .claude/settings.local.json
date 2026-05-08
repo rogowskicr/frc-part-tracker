@@ -11,7 +11,9 @@
       "Bash(npx supabase *)",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(Copy-Item \"c:\\\\Users\\\\conno\\\\Documents\\\\FRC Part Tracker\\\\public\\\\logo.png\" \"c:\\\\Users\\\\conno\\\\Documents\\\\FRC Part Tracker\\\\src\\\\app\\\\icon.png\")"
+      "Bash(Copy-Item \"c:\\\\Users\\\\conno\\\\Documents\\\\FRC Part Tracker\\\\public\\\\logo.png\" \"c:\\\\Users\\\\conno\\\\Documents\\\\FRC Part Tracker\\\\src\\\\app\\\\icon.png\")",
+      "Bash(npx tsc *)",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)"
     ]
   }
 }
