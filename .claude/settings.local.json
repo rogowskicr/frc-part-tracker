@@ -23,7 +23,9 @@
       "WebFetch(domain:onshape-public.github.io)",
       "WebFetch(domain:github.com)",
       "Bash(gh api *)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:cad.onshape.com)",
+      "mcp__supabase__execute_sql"
     ]
   }
 }

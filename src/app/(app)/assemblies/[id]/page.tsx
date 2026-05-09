@@ -5,6 +5,7 @@ import StatusBadge from '@/components/StatusBadge';
 import type { PartStatus } from '@/lib/types';
 import DeleteAssemblyButton from './DeleteAssemblyButton';
 import OnshapePanel from './OnshapePanel';
+import PartQtyEditor from './PartQtyEditor';
 
 export default async function AssemblyDetailPage({
   params,
@@ -51,13 +52,40 @@ export default async function AssemblyDetailPage({
     .from('parts')
     .select(
       `
-      id, part_number, name, type, status, naming_flagged, assigned_to,
+      id, part_number, name, type, status, naming_flagged, assigned_to, onshape_part_id,
+      onshape_element_id,
       assigned_user:assigned_to(name),
       bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_purchase_link)
     `
     )
     .eq('assembly_id', id)
     .order('part_number', { ascending: true });
+
+  // ── Global spare sums ─────────────────────────────────────────────────────
+  // Spare qty is a project-level total across all assemblies that use this part.
+  // Key by name (same strategy as import/parts-page dedup).
+  const onshapePartNames = [...new Set(
+    (parts ?? [])
+      .filter((p) => p.onshape_element_id)
+      .map((p) => p.name.trim().toLowerCase())
+  )];
+
+  const globalSpareMap = new Map<string, number>(); // key: name (lowercase)
+
+  if (onshapePartNames.length > 0) {
+    const { data: allSimilar } = await supabase
+      .from('parts')
+      .select('name, bom_items(cots_quantity_spare)')
+      .eq('team_id', teamId ?? '')
+      .not('onshape_element_id', 'is', null);
+
+    for (const p of allSimilar ?? []) {
+      const key = p.name.trim().toLowerCase();
+      if (!onshapePartNames.includes(key)) continue;
+      const bom = (p.bom_items as Array<{ cots_quantity_spare: number }>)?.[0];
+      globalSpareMap.set(key, (globalSpareMap.get(key) ?? 0) + (bom?.cots_quantity_spare ?? 0));
+    }
+  }
 
   const parent = assembly.parent as unknown as { id: string; assembly_number: string; name: string } | null;
 
@@ -233,14 +261,37 @@ export default async function AssemblyDetailPage({
                             ⚠
                           </span>
                         )}
+                        {part.onshape_part_id && (
+                          <span title="Imported from OnShape" className="text-cyan-400 text-xs shrink-0 font-mono bg-cyan-900/30 px-1 rounded">
+                            OS
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5">
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                         <span className="text-xs text-gray-500 capitalize">
                           {part.type === 'off_shelf' ? 'Off-shelf' : 'Manufactured'}
                         </span>
                         {bom && (
-                          <span className="text-xs text-gray-500">Qty: {bom.onshape_quantity}</span>
+                          <PartQtyEditor
+                            partId={part.id}
+                            assemblyId={id}
+                            quantity={bom.onshape_quantity}
+                            canMutate={canMutate}
+                          />
                         )}
+                        {(() => {
+                          const globalSpare = part.onshape_element_id
+                            ? (globalSpareMap.get(part.name.trim().toLowerCase()) ?? bom?.cots_quantity_spare ?? 0)
+                            : (bom?.cots_quantity_spare ?? 0);
+                          return globalSpare > 0 ? (
+                            <span
+                              title="Total spare quantity across all assemblies"
+                              className="text-xs text-gray-600"
+                            >
+                              +{globalSpare} spare
+                            </span>
+                          ) : null;
+                        })()}
                         {bom?.cots_vendor && (
                           <span className="text-xs text-gray-500">{bom.cots_vendor}</span>
                         )}

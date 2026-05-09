@@ -182,49 +182,129 @@ export async function updatePart(id: string, formData: FormData) {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('role')
+    .select('role, team_id')
     .eq('id', user.id)
     .single();
 
   if (profile?.role === 'viewer') return { error: 'Viewers cannot edit parts' };
 
-  const name = (formData.get('name') as string).trim();
+  const name        = (formData.get('name') as string).trim();
   const description = (formData.get('description') as string | null)?.trim() || null;
-  const cad_link = (formData.get('cad_link') as string | null)?.trim() || null;
+  const cad_link    = (formData.get('cad_link') as string | null)?.trim() || null;
   const assigned_to = (formData.get('assigned_to') as string | null) || null;
-  const type = formData.get('type') as 'manufactured' | 'off_shelf';
+  const type        = formData.get('type') as 'manufactured' | 'off_shelf';
   const assembly_id = (formData.get('assembly_id') as string | null) || null;
+  const propagate   = formData.get('propagate') === 'true';
+
+  // Part number: editable for all parts; validate format only for manufactured
+  const rawPartNumber = (formData.get('part_number') as string | null)?.trim().toUpperCase() || null;
+  let part_number = rawPartNumber || null;
+  if (type === 'manufactured' && part_number) {
+    const err = validatePartNumber(part_number);
+    if (err) return { error: err };
+  }
 
   let naming_flagged: boolean | undefined;
   if (type === 'manufactured') {
-    const conformance = checkNamingConformance(name, 'part');
-    naming_flagged = !conformance.conforms;
+    naming_flagged = !checkNamingConformance(name, 'part').conforms;
+  } else {
+    naming_flagged = false;
   }
 
-  const updateFields: Record<string, unknown> = { name, description, cad_link, assigned_to: assigned_to || null };
-  if (naming_flagged !== undefined) updateFields.naming_flagged = naming_flagged;
+  const { data: existing } = await supabase
+    .from('parts')
+    .select('assembly_id, onshape_element_id, onshape_part_id')
+    .eq('id', id)
+    .single();
+
+  const updateFields: Record<string, unknown> = {
+    name, description, cad_link, type,
+    assigned_to:    assigned_to || null,
+    naming_flagged,
+  };
+  if (part_number !== undefined) updateFields.part_number = part_number;
   if (assembly_id) updateFields.assembly_id = assembly_id;
 
-  const { data: existing } = await supabase.from('parts').select('assembly_id').eq('id', id).single();
   const { error } = await supabase.from('parts').update(updateFields).eq('id', id);
   if (error) return { error: error.message };
 
-  const onshape_quantity = parseInt(formData.get('quantity') as string, 10) || 1;
-  const cots_quantity_spare = parseInt(formData.get('spare_quantity') as string, 10) || 0;
-  const cots_vendor = (formData.get('cots_vendor') as string | null)?.trim() || null;
+  const cots_quantity_spare       = parseInt(formData.get('spare_quantity') as string, 10) || 0;
+  const cots_vendor               = (formData.get('cots_vendor') as string | null)?.trim() || null;
   const cots_supplier_part_number = (formData.get('cots_supplier_part_number') as string | null)?.trim() || null;
-  const cots_purchase_link = (formData.get('cots_purchase_link') as string | null)?.trim() || null;
+  const cots_purchase_link        = (formData.get('cots_purchase_link') as string | null)?.trim() || null;
+
+  // Quantity is assembly-specific — do not update it from the edit form.
+  // Fetch the current qty so we can keep cots_quantity in sync for off_shelf parts.
+  const { data: currentBom } = await supabase
+    .from('bom_items')
+    .select('onshape_quantity')
+    .eq('part_id', id)
+    .single();
+  const currentQty = currentBom?.onshape_quantity ?? 1;
 
   const bomUpdate: Record<string, unknown> = {
-    onshape_quantity,
     cots_quantity_spare,
     cots_vendor,
     cots_supplier_part_number,
     cots_purchase_link,
+    cots_quantity: type === 'off_shelf' ? currentQty : null,
   };
   if (assembly_id) bomUpdate.assembly_id = assembly_id;
-
   await supabase.from('bom_items').update(bomUpdate).eq('part_id', id);
+
+  // Propagate all part-level fields to every part sharing the same OnShape identity.
+  // Assembly-specific fields (onshape_quantity, assigned_to, status, assembly_id) are NOT propagated.
+  if (
+    propagate &&
+    profile?.team_id &&
+    existing?.onshape_element_id &&
+    existing?.onshape_part_id
+  ) {
+    const { data: likeParts } = await supabase
+      .from('parts')
+      .select('id')
+      .eq('team_id', profile.team_id)
+      .eq('onshape_element_id', existing.onshape_element_id)
+      .eq('onshape_part_id', existing.onshape_part_id)
+      .neq('id', id);
+
+    if (likeParts && likeParts.length > 0) {
+      const likeIds = likeParts.map((p) => p.id);
+
+      // Propagate all part-level fields; assembly/assignment/status stay per-instance
+      const propagateFields: Record<string, unknown> = {
+        name, description, type, cad_link, naming_flagged,
+      };
+      if (part_number !== undefined) propagateFields.part_number = part_number;
+      await supabase.from('parts').update(propagateFields).in('id', likeIds);
+
+      // Update each like part's BOM metadata; preserve per-assembly onshape_quantity
+      for (const likeId of likeIds) {
+        const { data: likeBom } = await supabase
+          .from('bom_items')
+          .select('onshape_quantity')
+          .eq('part_id', likeId)
+          .single();
+
+        const likeQty = likeBom?.onshape_quantity ?? 1;
+        await supabase.from('bom_items').update({
+          cots_vendor,
+          cots_supplier_part_number,
+          cots_purchase_link,
+          cots_quantity_spare,
+          cots_quantity: type === 'off_shelf' ? likeQty : null,
+        }).eq('part_id', likeId);
+      }
+
+      // Revalidate affected assembly pages
+      const { data: likeAssemblies } = await supabase
+        .from('parts')
+        .select('assembly_id')
+        .in('id', likeIds);
+      const asmIds = [...new Set((likeAssemblies ?? []).map((p) => p.assembly_id))];
+      asmIds.forEach((aId) => { if (aId) revalidatePath(`/assemblies/${aId}`); });
+    }
+  }
 
   revalidatePath(`/parts/${id}`);
   revalidatePath('/parts');
@@ -233,6 +313,45 @@ export async function updatePart(id: string, formData: FormData) {
     revalidatePath(`/assemblies/${assembly_id}`);
   }
   redirect(`/parts/${id}`);
+}
+
+/** Update only the required quantity for one part within a specific assembly. */
+export async function updatePartBomQuantity(partId: string, assemblyId: string, quantity: number) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot edit quantities' };
+
+  if (!Number.isInteger(quantity) || quantity < 1) return { error: 'Quantity must be a positive integer' };
+
+  // Confirm the part belongs to this assembly (prevents cross-team edits)
+  const { data: part } = await supabase
+    .from('parts')
+    .select('id, type')
+    .eq('id', partId)
+    .eq('assembly_id', assemblyId)
+    .single();
+  if (!part) return { error: 'Part not found in this assembly' };
+
+  const { error } = await supabase
+    .from('bom_items')
+    .update({
+      onshape_quantity: quantity,
+      cots_quantity:    part.type === 'off_shelf' ? quantity : null,
+    })
+    .eq('part_id', partId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/assemblies/${assemblyId}`);
+  return { success: true };
 }
 
 export async function getNextPartNumber(assemblyNumber: string): Promise<string> {

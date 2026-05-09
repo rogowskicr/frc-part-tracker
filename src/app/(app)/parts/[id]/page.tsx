@@ -26,7 +26,7 @@ export default async function PartDetailPage({
       .from('parts')
       .select(
         `
-        id, part_number, name, description, type, status, naming_flagged, cad_link, created_at,
+        id, part_number, name, description, type, status, naming_flagged, cad_link, created_at, onshape_part_id,
         assembly:assembly_id(id, assembly_number, name),
         assigned_user:assigned_to(id, name),
         bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_supplier_part_number, cots_purchase_link)
@@ -107,6 +107,14 @@ export default async function PartDetailPage({
                 ⚠ Name flagged
               </span>
             )}
+            {part.onshape_part_id && (
+              <span
+                title="Imported from OnShape"
+                className="inline-flex items-center gap-1 text-xs bg-cyan-900/40 text-cyan-300 border border-cyan-700 px-2 py-0.5 rounded-full font-mono"
+              >
+                OS Imported
+              </span>
+            )}
           </div>
           {part.description && <p className="mt-2 text-gray-300">{part.description}</p>}
         </div>
@@ -179,7 +187,7 @@ export default async function PartDetailPage({
                   rel="noopener noreferrer"
                   className="text-blue-400 hover:text-blue-300"
                 >
-                  🔗 Open in CAD
+                  🔗 {part.onshape_part_id ? 'Open in OnShape' : 'Open in CAD'}
                 </a>
               }
             />

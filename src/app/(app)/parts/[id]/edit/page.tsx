@@ -29,6 +29,7 @@ export default async function EditPartPage({
       .from('parts')
       .select(
         `id, part_number, name, description, type, cad_link, assigned_to, assembly_id,
+         onshape_part_id, onshape_element_id, onshape_workspace_id,
          bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_supplier_part_number, cots_purchase_link)`
       )
       .eq('id', id)
@@ -56,6 +57,19 @@ export default async function EditPartPage({
     cots_purchase_link: string | null;
   }>)?.[0] ?? null;
 
+  // Count how many other parts in this team share the same OnShape identity
+  let likePartCount = 0;
+  if (part.onshape_element_id && part.onshape_part_id) {
+    const { count } = await supabase
+      .from('parts')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', profile.team_id)
+      .eq('onshape_element_id', part.onshape_element_id)
+      .eq('onshape_part_id', part.onshape_part_id)
+      .neq('id', id);
+    likePartCount = count ?? 0;
+  }
+
   return (
     <EditPartForm
       part={{
@@ -67,10 +81,13 @@ export default async function EditPartPage({
         cad_link: part.cad_link,
         assigned_to: part.assigned_to,
         assembly_id: part.assembly_id,
+        onshape_part_id: part.onshape_part_id ?? null,
+        onshape_element_id: part.onshape_element_id ?? null,
       }}
       bom={bom}
       teamMembers={membersRes.data ?? []}
       assemblies={assembliesRes.data ?? []}
+      likePartCount={likePartCount}
     />
   );
 }

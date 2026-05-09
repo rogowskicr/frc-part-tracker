@@ -4,7 +4,6 @@
 import { createHmac, randomUUID } from 'crypto';
 
 import type {
-  OnshapeSessionInfo,
   OnshapeBomResponse,
   OnshapeDocumentListResponse,
   OnshapeElement,
@@ -146,11 +145,15 @@ export async function listElements(
 export async function fetchBom(
   { documentId, workspaceType, workspaceId, elementId }: ParsedOnshapeUrl,
   creds: OnshapeCredentials,
+  { indented = false }: { indented?: boolean } = {},
 ): Promise<OnshapeBomResponse> {
   return apiFetch<OnshapeBomResponse>(
     'GET',
     `assemblies/d/${documentId}/${workspaceType}/${workspaceId}/e/${elementId}/bom`,
-    { indented: 'false', multiLevel: 'false' },
+    {
+      indented:   String(indented),
+      multiLevel: String(indented), // true=all levels, false=top only
+    },
     creds,
   );
 }

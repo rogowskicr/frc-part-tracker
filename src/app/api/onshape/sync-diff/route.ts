@@ -85,11 +85,11 @@ export async function GET(request: Request) {
 
   type DbPart = NonNullable<typeof dbParts>[number];
 
+  // DB is always name-deduped (one record per name per assembly)
   const dbByKey = new Map<string, DbPart>();
   for (const p of dbParts ?? []) {
-    if (p.onshape_element_id && p.onshape_part_id) {
-      const key = `${assembly.onshape_doc_id}/${p.onshape_element_id}/${p.onshape_part_id}`;
-      dbByKey.set(key, p);
+    if (p.onshape_element_id) {
+      dbByKey.set(p.name.trim().toLowerCase(), p);
     }
   }
 
@@ -97,8 +97,16 @@ export async function GET(request: Request) {
   const removed: { name: string; partId: string }[] = [];
   const changed: { name: string; partId: string; oldQty: number; newQty: number }[] = [];
 
+  // Re-key onshape BOM items by name to match the DB key format.
+  // For COTS the bomItemKey already uses `cots:name`; strip the prefix.
+  // For manufactured it uses `mfg:elementId:name`; strip prefix and elementId.
+  const onshapeByShortKey = new Map<string, (typeof onshapeByKey extends Map<string, infer V> ? V : never)>();
+  for (const [, item] of onshapeByKey) {
+    onshapeByShortKey.set(item.name.trim().toLowerCase(), item);
+  }
+
   // Parts in OnShape but not in DB → added
-  for (const [key, item] of onshapeByKey) {
+  for (const [key, item] of onshapeByShortKey) {
     if (!dbByKey.has(key)) {
       added.push({ name: item.name, quantity: item.quantity, type: item.type });
     } else {
@@ -113,7 +121,7 @@ export async function GET(request: Request) {
 
   // Parts in DB that came from OnShape but are no longer in BOM → removed
   for (const [key, dbPart] of dbByKey) {
-    if (!onshapeByKey.has(key)) {
+    if (!onshapeByShortKey.has(key)) {
       removed.push({ name: dbPart.name, partId: dbPart.id });
     }
   }

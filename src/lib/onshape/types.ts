@@ -1,45 +1,44 @@
 // OnShape REST API response types
-// https://onshape-public.github.io/docs/api-intro/
 
-export interface OnshapeSessionInfo {
-  id: string;
-  name: string;
-  email: string;
-  href: string;
+export interface OnshapeItemSource {
+  documentId: string;
+  elementId: string;
+  /** Absent on ASSEMBLY items — use !partId to detect sub-assemblies */
+  partId?: string;
+  wvmId: string;
+  /** 'w' = workspace (team's own part), 'v' = versioned external doc (library/COTS) */
+  wvmType: 'w' | 'v' | 'm';
+  isStandardContent: boolean;
+  configuration?: string;
+  fullConfiguration?: string;
+  viewHref?: string;
+  partIdentity?: string;
+  relatedOccurrences?: string[];
+  indentLevel?: number;
 }
 
 export interface OnshapeBomItem {
-  id: string;
-  /** Display name of the part or assembly */
   name: string;
-  /** Part number assigned in OnShape (may be empty) */
-  partNumber: string;
-  /** Total quantity at this level */
   quantity: number;
-  /**
-   * ORIGINAL = team-made (manufactured)
-   * PURCHASED = off-the-shelf (COTS)
-   * MAKE / BUY are legacy synonyms
-   */
-  itemSource: 'ORIGINAL' | 'PURCHASED' | 'MAKE' | 'BUY' | string;
-  /** PART, ASSEMBLY, DOCUMENT, or VIRTUAL */
-  itemType: 'PART' | 'ASSEMBLY' | 'DOCUMENT' | 'VIRTUAL' | string;
-  /** Indent level in the BOM tree (0 = top level) */
-  indent: number;
-  /** OnShape part ID (null for assemblies) */
-  partId: string | null;
-  documentId: string;
-  workspaceId: string;
-  elementId: string;
-  /** Raw BOM row number e.g. "1", "1.1" */
-  item: string;
+  itemSource: OnshapeItemSource;
+  /** 'PART' | 'ASSEMBLY' — present in indented BOM; absent in flat BOM */
+  itemType?: string;
+  /** Depth in assembly tree — present when fetched with indented=true */
+  indent?: number;
+  description?: string;
+  partNumber?: string;
+  vendor?: string;
+  item?: string;
+  excludeFromBom?: boolean;
+  material?: { displayName?: string; id?: string };
+  [key: string]: unknown;
 }
 
 export interface OnshapeBomResponse {
   bomTable: {
     name: string;
     items: OnshapeBomItem[];
-    headers: Array<{ id: string; name: string }>;
+    headers?: Array<{ id: string; name: string }>;
   };
 }
 
@@ -67,8 +66,7 @@ export interface OnshapeElement {
 }
 
 export interface OnshapeShadedView {
-  /** base64-encoded PNG */
-  viewData: string;
+  viewData: string; // base64 PNG
   mediaType: string;
 }
 
