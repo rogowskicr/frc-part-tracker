@@ -25,7 +25,12 @@
       "Bash(gh api *)",
       "WebSearch",
       "WebFetch(domain:cad.onshape.com)",
-      "mcp__supabase__execute_sql"
+      "mcp__supabase__execute_sql",
+      "Bash(xargs grep -l \"server.*action\" -i)",
+      "Bash(xargs grep -l \"searchParam\" -i)",
+      "Bash(xargs ls -la)",
+      "Bash(Get-Content \"C:\\\\Users\\\\conno\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-conno-Documents-FRC-Part-Tracker\\\\3f082774-accb-4f9b-8d6b-c6289e54d4d8\\\\tasks\\\\b4m1y7n83.output\" -Wait)",
+      "Bash(Select-String -Pattern \"Ready|Error|error|Failed|localhost\")"
     ]
   }
 }

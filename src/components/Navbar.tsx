@@ -14,6 +14,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/assemblies', label: 'Assemblies' },
   { href: '/parts', label: 'Parts' },
+  { href: '/orders', label: 'Orders' },
 ];
 
 export default function Navbar({ userName, teamName, teamId }: NavProps) {

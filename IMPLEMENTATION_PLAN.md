@@ -214,50 +214,48 @@ A cloud-hosted web application for FRC teams to track parts and subassemblies th
 
 ---
 
-## Phase 4: COTS Order Aggregation
+## Phase 4: COTS Order Aggregation — COMPLETE
 
 **Context from Phase 3**: The BOM import populates `cots_vendor`, `cots_supplier_part_number`, and `cots_purchase_link` for off_shelf parts. These fields are blank on initial import — the team must fill them in via the part edit form. The "propagate to like parts" feature makes it practical to set vendor info once and push to all identical parts in the project. The parts page already deduplicates COTS parts by name with summed quantities, so the order view can build directly on that data model.
 
-- [ ] **COTS order view** (`/orders`): all off-the-shelf parts across all assemblies for the active project, deduplicated by name with summed required + spare quantities
-- [ ] Display per line item: Assembly source list · Required · + Spare · = Total Order Qty
-- [ ] **Vendor filter tabs** matching `DEFAULT_COTS_VENDORS`: AndyMark, WCP, REV, ThriftyBot, Amazon, Other
-- [ ] **Quick-order link** per line item (opens `cots_purchase_link` in new tab)
-- [ ] **Order status** per vendor group: Pending → Ordered → Received; stored in a new `cots_orders` table keyed by `(team_id, vendor, project_code)`
-- [ ] Mark individual parts as received within an order
-- [ ] **Export to CSV**: columns — Part Name, Part Number, Vendor, Supplier P/N, Qty Required, Spare Qty, Total Qty, Purchase Link
-- [ ] Parts without vendor/supplier info highlighted so team knows what to fill in before ordering
-- [ ] Aggregate identical parts by `(name, cots_supplier_part_number)` when supplier P/N is populated; fall back to name-only when it is not
+- [x] **COTS order view** (`/orders`): all off-the-shelf parts across all assemblies for the active project, deduplicated by name with summed required + spare quantities
+- [x] Display per line item: Assembly source list · Required · + Spare · = Total Order Qty
+- [x] **Vendor filter tabs** matching `DEFAULT_COTS_VENDORS`: WCP, AndyMark, REV, ThriftyBot, Amazon, VEXpro, Other
+- [x] **Quick-order link** per line item (opens `cots_purchase_link` in new tab)
+- [x] **Order status** per vendor group: Pending → Ordered → Received; stored in `cots_orders` table keyed by `(team_id, project_code, vendor)` with upsert
+- [x] Mark individual parts as received within an order (checkbox per line; updates all matching `bom_items.cots_received`)
+- [x] **Export to CSV**: columns — Part Name, Part Number, Vendor, Supplier P/N, Qty Required, Spare Qty, Total Qty, Purchase Link
+- [x] Parts without vendor/supplier info shown in "Needs Info" tab with ⚠ highlight; excluded from vendor groups
+- [x] Aggregate identical parts by `(name, cots_supplier_part_number)` when supplier P/N is populated; fall back to name-only when it is not
+- [x] **Orders link** added to Navbar
 
-**Schema addition needed:**
-```sql
-CREATE TABLE cots_orders (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  team_id uuid REFERENCES teams(id) ON DELETE CASCADE,
-  project_code text NOT NULL,
-  vendor text NOT NULL,
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ordered', 'received')),
-  ordered_at timestamptz,
-  received_at timestamptz,
-  notes text,
-  created_at timestamptz DEFAULT now()
-);
-```
+**Schema additions (migration `phase4_cots_orders`):**
+- `cots_orders` table with RLS; unique on `(team_id, project_code, vendor)`; index on `(team_id, project_code)`
+- `bom_items.cots_received` boolean column (default false) for per-line received tracking
+
+**Key implementation decisions:**
+- Vendor tabs are client-side state (no URL param needed — data is all loaded server-side)
+- Received state = OR of all bom_items for the deduplicated line; clicking toggles all matching part IDs at once
+- "Needs Info" lines (missing vendor OR supplier PN) are segregated to their own tab to keep vendor groups clean
+- dedup key: `name::supplierPN` when supplier PN set, else `name` (matches parts page logic)
 
 ---
 
 ## Phase 5: Manufacturing Workflow
 
-**Context from Phase 3**: Every manufactured part now carries `onshape_element_id` + `onshape_part_id` + `cad_link`. The CAD export feature (PDF/STEP/DXF) can use these to trigger OnShape's export API directly. The `part_manufacturing` table and `manufacturing_processes` table already exist and are seeded with default processes (3D Printing, Laser Cut, CNC Mill, CNC Lathe, Hand Fabrication, Welding, Sheet Metal). The `cad_link` on each part opens the part directly in OnShape, which will be useful for operators referencing drawings on the shop floor.
+**Context from Phase 3 & 4**: Every manufactured part carries `onshape_element_id` + `onshape_part_id` + `cad_link`. The CAD export is a **pass-through only** — files are fetched from OnShape's export API on demand and streamed directly to the browser. No CAD files are stored in the application or Supabase Storage at any point. The `part_manufacturing` table and `manufacturing_processes` table already exist and are seeded with default processes (3D Printing, Laser Cut, CNC Mill, CNC Lathe, Hand Fabrication, Welding, Sheet Metal). The `cad_link` on each part opens the part directly in OnShape.
+
+**CAD export formats supported**: STL (3D printing / visualization), STEP (CNC / CAM software import), DXF (laser cut / sheet metal). No PDF — use OnShape's native drawing environment for print-ready drawings.
 
 - [ ] **Assign processes to a part**: one or more processes per manufactured part using existing `part_manufacturing` table; shown on part detail page
-- [ ] **Outsourced flag**: checkbox on part edit/manufacturing form; exposes vendor name + export format fields (PDF/STEP/DXF)
-- [ ] **CAD export**: button on part detail page → calls OnShape export API using stored `onshape_element_id` + `onshape_part_id`; downloads the file
+- [ ] **Outsourced flag**: checkbox on part edit/manufacturing form; exposes vendor name field
+- [ ] **CAD export buttons** on part detail page (only for parts with `onshape_element_id`): three buttons — STL · STEP · DXF — each calls a Next.js API route that proxies the OnShape export API and streams the file directly to the browser; no file stored server-side
 - [ ] **Manufacturing status pipeline**: `not_started → in_progress → qc → done` per `part_manufacturing` record (separate from the part's overall status)
 - [ ] **Process-level assignment**: assign a team member to each manufacturing operation
 - [ ] **Manufacturing queue view** (`/manufacturing`): all parts in `ready_for_manufacturing` or `in_progress` status, grouped by process; filtered to active project
-- [ ] Queue shows: part number, assembly, assigned engineer, CAD link, OnShape link
+- [ ] Queue shows: part number, assembly, assigned engineer, CAD export buttons (STL/STEP/DXF), OnShape link
 - [ ] **Batch status update**: select multiple parts in queue → mark all as In Progress or Complete
-- [ ] Parts with `onshape_element_id` get an "Open in OnShape" button on the manufacturing queue
+- [ ] Parts without `onshape_element_id` show CAD export buttons as disabled with tooltip "No OnShape link"
 
 ---
 
@@ -305,7 +303,7 @@ CREATE TABLE cots_orders (
 ## Success Criteria
 
 - [x] Team imports full BOM from OnShape with auto-populated quantities, part numbers, and sub-assembly hierarchy
-- [ ] COTS parts auto-detected and grouped by vendor/part# into unified ordering interface
+- [x] COTS parts auto-detected and grouped by vendor/part# into unified ordering interface
 - [x] Required and spare quantities displayed separately and clearly (required per-assembly, spare as project total)
 - [x] Manufactured parts locked to OnShape names with visual flags for non-conformant naming
 - [x] Duplicate COTS parts across assemblies automatically aggregated (show source assemblies, summed quantities)
