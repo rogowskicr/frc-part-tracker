@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
-import StatusBadge from '@/components/StatusBadge';
 import type { PartStatus } from '@/lib/types';
 import DeleteAssemblyButton from './DeleteAssemblyButton';
 import OnshapePanel from './OnshapePanel';
 import PartQtyEditor from './PartQtyEditor';
+import BulkStatusUpdate from './BulkStatusUpdate';
+import InlineStatusButton from './InlineStatusButton';
 
 export default async function AssemblyDetailPage({
   params,
@@ -55,7 +56,7 @@ export default async function AssemblyDetailPage({
       id, part_number, name, type, status, naming_flagged, assigned_to, onshape_part_id,
       onshape_element_id,
       assigned_user:assigned_to(name),
-      bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_purchase_link)
+      bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_purchase_link, quantity_locked)
     `
     )
     .eq('assembly_id', id)
@@ -89,6 +90,13 @@ export default async function AssemblyDetailPage({
 
   const parent = assembly.parent as unknown as { id: string; assembly_number: string; name: string } | null;
 
+  // Subassemblies of this assembly
+  const { data: subAssemblies } = await supabase
+    .from('assemblies')
+    .select('id, assembly_number, name, description')
+    .eq('parent_assembly_id', id)
+    .order('assembly_number');
+
   // Status summary counts
   const statusCounts = (parts ?? []).reduce(
     (acc, p) => {
@@ -100,7 +108,7 @@ export default async function AssemblyDetailPage({
   const statusOrder: PartStatus[] = [
     'design', 'ready_for_manufacturing', 'in_progress',
     'manufacturing_complete', 'ready_for_powder_coating', 'powder_coating_complete',
-    'robot_ready', 'on_hold',
+    'robot_ready', 'on_hold', 'ready_for_order',
   ];
   const statusLabels: Record<PartStatus, string> = {
     design: 'Design',
@@ -111,6 +119,7 @@ export default async function AssemblyDetailPage({
     powder_coating_complete: 'Powder Coat Done',
     robot_ready: 'Robot Ready',
     on_hold: 'On Hold',
+    ready_for_order: 'Ready for Order',
   };
   const statusColors: Record<PartStatus, string> = {
     design: 'bg-blue-900/40 text-blue-300',
@@ -121,6 +130,7 @@ export default async function AssemblyDetailPage({
     powder_coating_complete: 'bg-violet-900/40 text-violet-300',
     robot_ready: 'bg-emerald-900/40 text-emerald-300',
     on_hold: 'bg-gray-700 text-gray-300',
+    ready_for_order: 'bg-sky-900/40 text-sky-300',
   };
 
   return (
@@ -188,6 +198,9 @@ export default async function AssemblyDetailPage({
               </Link>
             </>
           )}
+          {canMutate && (parts?.length ?? 0) > 0 && (
+            <BulkStatusUpdate assemblyId={id} />
+          )}
           {isAdmin && <DeleteAssemblyButton assemblyId={id} />}
         </div>
       </div>
@@ -222,6 +235,39 @@ export default async function AssemblyDetailPage({
         lastSync={assembly.onshape_last_sync ?? null}
       />
 
+      {/* Subassemblies */}
+      {subAssemblies && subAssemblies.length > 0 && (
+        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-700">
+            <h2 className="font-semibold text-gray-100">
+              Sub-Assemblies <span className="text-gray-500 font-normal ml-1">{subAssemblies.length}</span>
+            </h2>
+          </div>
+          <div className="divide-y divide-gray-700">
+            {subAssemblies.map((sub) => (
+              <Link
+                key={sub.id}
+                href={`/assemblies/${sub.id}`}
+                className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-gray-700/50 group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="font-mono text-xs text-blue-400 bg-blue-900/30 px-1.5 py-0.5 rounded shrink-0">
+                    {sub.assembly_number}
+                  </span>
+                  <span className="text-sm font-medium text-gray-100 group-hover:text-blue-400 truncate">
+                    {sub.name}
+                  </span>
+                  {sub.description && (
+                    <span className="text-xs text-gray-500 truncate hidden sm:block">{sub.description}</span>
+                  )}
+                </div>
+                <span className="text-gray-500 group-hover:text-blue-400 shrink-0">›</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Parts table */}
       <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-700 flex items-center justify-between">
@@ -247,6 +293,7 @@ export default async function AssemblyDetailPage({
                 cots_quantity_spare: number;
                 cots_vendor: string | null;
                 cots_purchase_link: string | null;
+                quantity_locked: boolean;
               }>)?.[0];
               const assignedUser = part.assigned_user as unknown as { name: string } | null;
 
@@ -266,11 +313,6 @@ export default async function AssemblyDetailPage({
                         >
                           {part.name}
                         </Link>
-                        {part.naming_flagged && (
-                          <span title="Name may not conform to part number format" className="text-yellow-500 text-xs shrink-0">
-                            ⚠
-                          </span>
-                        )}
                         {part.onshape_part_id && (
                           <span title="Imported from OnShape" className="text-cyan-400 text-xs shrink-0 font-mono bg-cyan-900/30 px-1 rounded">
                             OS
@@ -286,6 +328,7 @@ export default async function AssemblyDetailPage({
                             partId={part.id}
                             assemblyId={id}
                             quantity={bom.onshape_quantity}
+                            quantityLocked={bom.quantity_locked}
                             canMutate={canMutate}
                           />
                         )}
@@ -312,7 +355,11 @@ export default async function AssemblyDetailPage({
                     {assignedUser && (
                       <span className="text-xs text-gray-400 hidden sm:block">{assignedUser.name}</span>
                     )}
-                    <StatusBadge status={part.status as PartStatus} size="sm" />
+                    <InlineStatusButton
+                      partId={part.id}
+                      currentStatus={part.status as PartStatus}
+                      canMutate={canMutate}
+                    />
                   </div>
                 </div>
               );

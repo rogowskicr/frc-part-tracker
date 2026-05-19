@@ -24,7 +24,7 @@ export default async function EditPartPage({
   if (!profile?.team_id) redirect('/login');
   if (profile.role === 'viewer') redirect(`/parts/${id}`);
 
-  const [partRes, membersRes, assembliesRes] = await Promise.all([
+  const [partRes, membersRes, assembliesRes, customVendorsRes] = await Promise.all([
     supabase
       .from('parts')
       .select(
@@ -44,6 +44,12 @@ export default async function EditPartPage({
       .select('id, assembly_number, name')
       .eq('team_id', profile.team_id)
       .order('assembly_number'),
+    supabase
+      .from('team_vendors')
+      .select('name')
+      .eq('team_id', profile.team_id)
+      .or('type.eq.cots,type.eq.both')
+      .order('name'),
   ]);
 
   if (!partRes.data) notFound();
@@ -88,6 +94,7 @@ export default async function EditPartPage({
       teamMembers={membersRes.data ?? []}
       assemblies={assembliesRes.data ?? []}
       likePartCount={likePartCount}
+      customVendors={(customVendorsRes.data ?? []).map((v) => v.name)}
     />
   );
 }

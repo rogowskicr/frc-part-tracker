@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { updateOrderStatus, markLineReceived } from '@/app/actions/orders';
+import { updateOrderStatus, markLineReceived, markLineOrdered } from '@/app/actions/orders';
 
 export type OrderLine = {
   name: string;
@@ -15,6 +15,7 @@ export type OrderLine = {
   total_spare: number;
   assembly_list: { id: string; assembly_number: string; name: string }[];
   received: boolean;
+  ordered: boolean;
   missing_info: boolean;
 };
 
@@ -22,6 +23,7 @@ export type VendorGroup = {
   vendor: string;
   status: 'pending' | 'ordered' | 'received';
   lines: OrderLine[];
+  isOutsourced?: boolean;
 };
 
 const STATUS_COLORS = {
@@ -65,16 +67,23 @@ export default function OrdersClient({
   const [activeTab, setActiveTab] = useState('All');
   const [pending, startTransition] = useTransition();
 
-  function handleStatusUpdate(vendor: string, currentStatus: string) {
+  function handleStatusUpdate(vendor: string, currentStatus: string, vendorLines: OrderLine[]) {
     const next = NEXT_STATUS[currentStatus];
+    const partIds = vendorLines.flatMap((l) => l.part_ids);
     startTransition(async () => {
-      await updateOrderStatus(vendor, projectCode, next);
+      await updateOrderStatus(vendor, projectCode, next, partIds);
     });
   }
 
   function handleReceived(line: OrderLine, received: boolean) {
     startTransition(async () => {
       await markLineReceived(line.part_ids, received);
+    });
+  }
+
+  function handleOrdered(line: OrderLine, ordered: boolean) {
+    startTransition(async () => {
+      await markLineOrdered(line.part_ids, ordered);
     });
   }
 
@@ -143,6 +152,7 @@ export default function OrdersClient({
           isPending={pending}
           onStatusUpdate={handleStatusUpdate}
           onReceivedToggle={handleReceived}
+          onOrderedToggle={handleOrdered}
         />
       ))}
 
@@ -155,7 +165,13 @@ export default function OrdersClient({
               These parts are missing vendor or supplier part number — fill them in on the part edit page before ordering.
             </span>
           </div>
-          <LineTable lines={needsInfoLines} canEdit={canEdit} isPending={pending} onReceivedToggle={handleReceived} />
+          <LineTable
+            lines={needsInfoLines}
+            canEdit={canEdit}
+            isPending={pending}
+            onReceivedToggle={handleReceived}
+            onOrderedToggle={handleOrdered}
+          />
         </div>
       )}
 
@@ -189,12 +205,14 @@ function VendorSection({
   isPending,
   onStatusUpdate,
   onReceivedToggle,
+  onOrderedToggle,
 }: {
   group: VendorGroup;
   canEdit: boolean;
   isPending: boolean;
-  onStatusUpdate: (vendor: string, status: string) => void;
+  onStatusUpdate: (vendor: string, status: string, lines: OrderLine[]) => void;
   onReceivedToggle: (line: OrderLine, received: boolean) => void;
+  onOrderedToggle: (line: OrderLine, ordered: boolean) => void;
 }) {
   const totalItems = group.lines.reduce((s, l) => s + l.total_required + l.total_spare, 0);
 
@@ -203,6 +221,11 @@ function VendorSection({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h2 className="text-base font-semibold text-gray-100">{group.vendor}</h2>
+          {group.isOutsourced && (
+            <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/40 text-amber-300 border border-amber-700">
+              Outsourced
+            </span>
+          )}
           <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[group.status]}`}>
             {STATUS_LABELS[group.status]}
           </span>
@@ -213,14 +236,20 @@ function VendorSection({
         {canEdit && (
           <button
             disabled={isPending}
-            onClick={() => onStatusUpdate(group.vendor, group.status)}
+            onClick={() => onStatusUpdate(group.vendor, group.status, group.lines)}
             className="px-3 py-1 text-xs font-medium rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 disabled:opacity-50 transition-colors"
           >
             {NEXT_LABEL[group.status]}
           </button>
         )}
       </div>
-      <LineTable lines={group.lines} canEdit={canEdit} isPending={isPending} onReceivedToggle={onReceivedToggle} />
+      <LineTable
+        lines={group.lines}
+        canEdit={canEdit}
+        isPending={isPending}
+        onReceivedToggle={onReceivedToggle}
+        onOrderedToggle={onOrderedToggle}
+      />
     </div>
   );
 }
@@ -230,11 +259,13 @@ function LineTable({
   canEdit,
   isPending,
   onReceivedToggle,
+  onOrderedToggle,
 }: {
   lines: OrderLine[];
   canEdit: boolean;
   isPending: boolean;
   onReceivedToggle: (line: OrderLine, received: boolean) => void;
+  onOrderedToggle: (line: OrderLine, ordered: boolean) => void;
 }) {
   return (
     <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
@@ -247,6 +278,7 @@ function LineTable({
             <th className="px-4 py-2 text-right">Spare</th>
             <th className="px-4 py-2 text-right">Total</th>
             <th className="px-4 py-2 text-center">Order</th>
+            {canEdit && <th className="px-4 py-2 text-center">Ordered</th>}
             {canEdit && <th className="px-4 py-2 text-center">Received</th>}
           </tr>
         </thead>
@@ -308,6 +340,22 @@ function LineTable({
                   <span className="text-xs text-gray-600">—</span>
                 )}
               </td>
+              {canEdit && (
+                <td className="px-4 py-2.5 text-center">
+                  <button
+                    disabled={isPending}
+                    onClick={() => onOrderedToggle(line, !line.ordered)}
+                    className={`w-5 h-5 rounded border-2 flex items-center justify-center mx-auto transition-colors ${
+                      line.ordered
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'border-gray-500 hover:border-blue-500'
+                    }`}
+                    title={line.ordered ? 'Mark as not ordered' : 'Mark as ordered'}
+                  >
+                    {line.ordered && <span className="text-xs leading-none">✓</span>}
+                  </button>
+                </td>
+              )}
               {canEdit && (
                 <td className="px-4 py-2.5 text-center">
                   <button

@@ -26,7 +26,7 @@ export default async function OrdersPage() {
   if (!activeCode) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-gray-100">COTS Orders</h1>
+        <h1 className="text-2xl font-bold text-gray-100">Orders</h1>
         <div className="text-center py-16 bg-gray-800 rounded-xl border border-gray-700 border-dashed">
           <span className="text-4xl">📦</span>
           <h3 className="mt-4 text-lg font-medium text-gray-100">No active project</h3>
@@ -59,7 +59,7 @@ export default async function OrdersPage() {
       `id, name, part_number, type,
        onshape_element_id,
        assembly:assembly_id(id, assembly_number, name),
-       bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_supplier_part_number, cots_purchase_link, cots_received)`
+       bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_supplier_part_number, cots_purchase_link, cots_received, cots_ordered)`
     )
     .eq('team_id', profile.team_id)
     .eq('type', 'off_shelf');
@@ -97,6 +97,7 @@ export default async function OrdersPage() {
         cots_supplier_part_number: string | null;
         cots_purchase_link: string | null;
         cots_received: boolean;
+        cots_ordered: boolean;
       }>
     )?.[0];
 
@@ -119,6 +120,7 @@ export default async function OrdersPage() {
         existing.assembly_list.push(assembly);
       }
       if (bom?.cots_received) existing.received = true;
+      if (bom?.cots_ordered) existing.ordered = true;
       if (!existing.cots_vendor && vendor) existing.cots_vendor = vendor;
       if (!existing.cots_purchase_link && bom?.cots_purchase_link) {
         existing.cots_purchase_link = bom.cots_purchase_link;
@@ -135,6 +137,7 @@ export default async function OrdersPage() {
         total_spare: bom?.cots_quantity_spare ?? 0,
         assembly_list: assembly ? [assembly] : [],
         received: bom?.cots_received ?? false,
+        ordered: bom?.cots_ordered ?? false,
         missing_info: !vendor || !supplierPn,
       });
     }
@@ -177,6 +180,66 @@ export default async function OrdersPage() {
     }
   }
 
+  // ── Outsourced manufactured parts ──────────────────────────────────────────
+  let outsourcedQuery = supabase
+    .from('parts')
+    .select(
+      `id, name, part_number,
+       assembly:assembly_id(id, assembly_number, name),
+       bom_items(onshape_quantity),
+       part_manufacturing!inner(vendor, outsourced)`
+    )
+    .eq('team_id', profile.team_id)
+    .eq('type', 'manufactured');
+
+  if (projectAssemblyIds.length === 0) {
+    outsourcedQuery = outsourcedQuery.in('assembly_id', ['00000000-0000-0000-0000-000000000000']);
+  } else {
+    outsourcedQuery = outsourcedQuery.in('assembly_id', projectAssemblyIds);
+  }
+
+  const { data: rawOutsourced } = await outsourcedQuery;
+
+  const outsourcedByVendor = new Map<string, OrderLine[]>();
+  for (const part of rawOutsourced ?? []) {
+    const mfg = (part.part_manufacturing as Array<{ vendor: string | null; outsourced: boolean }>)?.find((m) => m.outsourced);
+    if (!mfg) continue;
+    const vendor = mfg.vendor?.trim() || 'Unknown';
+    const bom = (part.bom_items as Array<{ onshape_quantity: number }>)?.[0];
+    const assembly = part.assembly as unknown as AssemblyRef | null;
+
+    const line: OrderLine = {
+      name: part.name.trim(),
+      part_ids: [part.id],
+      part_number: part.part_number ?? null,
+      cots_vendor: vendor,
+      cots_supplier_part_number: null,
+      cots_purchase_link: null,
+      total_required: bom?.onshape_quantity ?? 0,
+      total_spare: 0,
+      assembly_list: assembly ? [assembly] : [],
+      received: false,
+      ordered: false,
+      missing_info: false,
+    };
+
+    const existing = outsourcedByVendor.get(vendor);
+    if (existing) {
+      existing.push(line);
+    } else {
+      outsourcedByVendor.set(vendor, [line]);
+    }
+  }
+
+  for (const [v, lines] of outsourcedByVendor) {
+    vendorGroups.push({
+      vendor: v,
+      status: orderStatusByVendor.get(`outsourced:${v}`) ?? 'pending',
+      lines,
+      isOutsourced: true,
+    });
+  }
+
   const totalLines = allLines.length;
   const totalUnits = allLines.reduce((s, l) => s + l.total_required + l.total_spare, 0);
 
@@ -184,7 +247,7 @@ export default async function OrdersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100">COTS Orders</h1>
+          <h1 className="text-2xl font-bold text-gray-100">Orders</h1>
           <p className="text-gray-400 mt-1">
             {totalLines} unique part{totalLines !== 1 ? 's' : ''} · {totalUnits} total units · Project {activeCode}
           </p>

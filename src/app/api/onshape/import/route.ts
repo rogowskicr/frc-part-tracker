@@ -23,6 +23,13 @@ interface ImportState {
   assemblies: Array<{ id: string; assembly_number: string; name: string; onshape_element_id: string | null; parent_assembly_id: string | null }>;
   /** All team part numbers — mutated to reserve newly assigned numbers */
   existingPartNums: string[];
+  /**
+   * Team-wide index of existing parts by OnShape identity key (`${elementId}:${partId}`).
+   * Used to prevent duplicate part records when the same physical part appears in
+   * multiple assemblies within the same BOM tree.
+   * Mutated as new parts are inserted during the import run.
+   */
+  partsByOnshapeKey: Map<string, string>; // key → DB part id
   created: string[];
   updated: string[];
   skipped: string[];
@@ -102,18 +109,27 @@ export async function POST(request: Request) {
 
     const hierarchy = buildBomHierarchy(rawItems);
 
-    // Fetch all team assemblies and part numbers upfront for dedup/numbering
+    // Fetch all team assemblies and parts upfront for dedup/numbering
     const [{ data: allAsms }, { data: allParts }] = await Promise.all([
       supabase.from('assemblies').select('id, assembly_number, name, onshape_element_id, parent_assembly_id').eq('team_id', profile.team_id),
-      supabase.from('parts').select('part_number').eq('team_id', profile.team_id),
+      supabase.from('parts').select('id, part_number, onshape_element_id, onshape_part_id').eq('team_id', profile.team_id),
     ]);
 
+    // Build team-wide index: OnShape identity → DB part ID
+    const partsByOnshapeKey = new Map<string, string>();
+    for (const p of allParts ?? []) {
+      if (p.onshape_element_id && p.onshape_part_id) {
+        partsByOnshapeKey.set(`${p.onshape_element_id}:${p.onshape_part_id}`, p.id);
+      }
+    }
+
     const state: ImportState = {
-      teamId:           profile.team_id,
-      userId:           user.id,
+      teamId:            profile.team_id,
+      userId:            user.id,
       supabase,
-      assemblies:       allAsms ?? [],
-      existingPartNums: (allParts ?? []).map(p => p.part_number).filter(Boolean) as string[],
+      assemblies:        allAsms ?? [],
+      existingPartNums:  (allParts ?? []).map(p => p.part_number).filter(Boolean) as string[],
+      partsByOnshapeKey,
       created: [],
       updated: [],
       skipped: [],
@@ -145,15 +161,15 @@ async function importNodes(
   parentAssemblyNumber: string,
   state: ImportState,
 ): Promise<void> {
-  const { supabase, teamId, userId, assemblies, existingPartNums, created, updated, skipped } = state;
+  const { supabase, teamId, userId, assemblies, existingPartNums, partsByOnshapeKey, created, updated, skipped } = state;
 
-  // Existing parts for this specific assembly (checked per-assembly to avoid cross-assignment)
+  // Existing parts for this specific assembly (snapshot for name-based match within this level)
   const { data: existingParts } = await supabase
     .from('parts')
     .select('id, name, part_number, onshape_part_id, onshape_element_id')
     .eq('assembly_id', parentAssemblyId);
 
-  // Track manufactured parts created at this level for cross-element accumulation
+  // Track manufactured parts created at this level for cross-element quantity accumulation
   const createdThisLevel = new Map<string, { id: string; qty: number }>();
 
   for (const node of nodes) {
@@ -247,11 +263,56 @@ async function importNodes(
             cad_link:             node.cadLink,
           }).eq('id', existing.id);
         }
-        await supabase.from('bom_items')
-          .update({ onshape_quantity: node.quantity })
-          .eq('part_id', existing.id);
+        // Only update quantity if not locked — scope to this assembly to avoid PGRST116
+        const { data: bomItem } = await supabase
+          .from('bom_items')
+          .select('quantity_locked')
+          .eq('part_id', existing.id)
+          .eq('assembly_id', parentAssemblyId)
+          .maybeSingle();
+        if (!bomItem?.quantity_locked) {
+          await supabase.from('bom_items')
+            .update({ onshape_quantity: node.quantity })
+            .eq('part_id', existing.id)
+            .eq('assembly_id', parentAssemblyId);
+        }
         updated.push(node.name);
         continue;
+      }
+
+      // Check team-wide OnShape identity index to prevent duplicate part records
+      // across assembly levels (e.g. the same body used in A_100 directly AND in A_101).
+      if (node.elementId && node.partId) {
+        const identityKey = `${node.elementId}:${node.partId}`;
+        const existingPartId = partsByOnshapeKey.get(identityKey);
+        if (existingPartId) {
+          // Part record already exists (from another assembly). Add a bom_item for
+          // this assembly if one doesn't already exist, then skip the insert.
+          const { data: existingBom } = await supabase
+            .from('bom_items')
+            .select('id, quantity_locked, onshape_quantity')
+            .eq('part_id', existingPartId)
+            .eq('assembly_id', parentAssemblyId)
+            .maybeSingle();
+
+          if (existingBom) {
+            if (!existingBom.quantity_locked) {
+              await supabase.from('bom_items')
+                .update({ onshape_quantity: node.quantity })
+                .eq('id', existingBom.id);
+            }
+          } else {
+            await supabase.from('bom_items').insert({
+              assembly_id:         parentAssemblyId,
+              part_id:             existingPartId,
+              onshape_quantity:    node.quantity,
+              cots_quantity:       node.partType === 'off_shelf' ? node.quantity : null,
+              cots_quantity_spare: 0,
+            });
+          }
+          updated.push(node.name);
+          continue;
+        }
       }
 
       // Manufactured: accumulate quantities across element contexts at this level
@@ -261,7 +322,8 @@ async function importNodes(
           const newQty = inLevel.qty + node.quantity;
           await supabase.from('bom_items')
             .update({ onshape_quantity: newQty })
-            .eq('part_id', inLevel.id);
+            .eq('part_id', inLevel.id)
+            .eq('assembly_id', parentAssemblyId);
           createdThisLevel.set(nameLower, { id: inLevel.id, qty: newQty });
           updated.push(node.name);
           continue;
@@ -305,6 +367,11 @@ async function importNodes(
 
       if (node.partType === 'manufactured') {
         createdThisLevel.set(nameLower, { id: newPart.id, qty: node.quantity });
+      }
+
+      // Register in the team-wide identity index so deeper recursion levels find it
+      if (node.elementId && node.partId) {
+        partsByOnshapeKey.set(`${node.elementId}:${node.partId}`, newPart.id);
       }
 
       await supabase.from('bom_items').insert({

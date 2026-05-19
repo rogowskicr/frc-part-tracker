@@ -3,12 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import StatusBadge from '@/components/StatusBadge';
 import type { PartStatus } from '@/lib/types';
-import { PART_STATUS_LABELS } from '@/lib/types';
 
 export default async function PartsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; assembly?: string; assigned?: string }>;
+  searchParams: Promise<{ status?: string; assembly?: string; assigned?: string; type?: string; q?: string; sort?: string; order?: string }>;
 }) {
   const filters = await searchParams;
   const supabase = await createClient();
@@ -73,6 +72,13 @@ export default async function PartsPage({
   if (filters.assigned === 'me') {
     query = query.eq('assigned_to', user.id);
   }
+  if (filters.type === 'off_shelf' || filters.type === 'manufactured') {
+    query = query.eq('type', filters.type);
+  }
+  if (filters.q) {
+    const q = filters.q.trim();
+    query = query.or(`name.ilike.%${q}%,part_number.ilike.%${q}%`);
+  }
 
   const { data: rawParts } = await query;
 
@@ -96,6 +102,7 @@ export default async function PartsPage({
     'in_progress',
     'on_hold',
     'ready_for_manufacturing',
+    'ready_for_order',
     'design',
   ];
   function worstStatus(statuses: PartStatus[]): PartStatus {
@@ -140,18 +147,29 @@ export default async function PartsPage({
     }
   }
 
-  const parts = Array.from(grouped.values());
+  let parts = Array.from(grouped.values());
 
-  const statuses: PartStatus[] = [
-    'design',
-    'ready_for_manufacturing',
-    'in_progress',
-    'manufacturing_complete',
-    'ready_for_powder_coating',
-    'powder_coating_complete',
-    'robot_ready',
-    'on_hold',
-  ];
+  // Client-side sort after dedup
+  const sortKey = filters.sort ?? 'created_at';
+  const sortAsc = filters.order !== 'desc';
+  parts = parts.sort((a, b) => {
+    let cmp = 0;
+    if (sortKey === 'name') {
+      cmp = a.name.localeCompare(b.name);
+    } else if (sortKey === 'part_number') {
+      cmp = (a.part_number ?? '').localeCompare(b.part_number ?? '');
+    } else if (sortKey === 'status') {
+      cmp = STATUS_PRIORITY.indexOf(b.worst_status) - STATUS_PRIORITY.indexOf(a.worst_status);
+    } else if (sortKey === 'assembly') {
+      const aAsm = a.assembly_list[0]?.assembly_number ?? '';
+      const bAsm = b.assembly_list[0]?.assembly_number ?? '';
+      cmp = aAsm.localeCompare(bAsm);
+    } else {
+      // Default: created_at (already sorted by DB, keep order)
+      cmp = 0;
+    }
+    return sortAsc ? cmp : -cmp;
+  });
 
   return (
     <div className="space-y-6">
@@ -182,21 +200,84 @@ export default async function PartsPage({
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2">
-        <FilterChip href="/parts" label="All" active={!filters.status && !filters.assigned} />
-        <FilterChip
-          href="/parts?assigned=me"
-          label="Assigned to me"
-          active={filters.assigned === 'me'}
-        />
-        {statuses.map((s) => (
-          <FilterChip
-            key={s}
-            href={`/parts?status=${s}`}
-            label={PART_STATUS_LABELS[s]}
-            active={filters.status === s}
-          />
-        ))}
+        <FilterChip href="/parts" label="All" active={!filters.status && !filters.assigned && !filters.type} />
+        <FilterChip href="/parts?assigned=me" label="Assigned to me" active={filters.assigned === 'me'} />
+        <FilterChip href="/parts?type=off_shelf" label="COTS Parts" active={filters.type === 'off_shelf'} />
+        <FilterChip href="/parts?type=manufactured" label="Manufactured Parts" active={filters.type === 'manufactured'} />
+        <FilterChip href="/parts?status=on_hold" label="On Hold" active={filters.status === 'on_hold'} />
       </div>
+
+      {/* Sort row + search */}
+      {(() => {
+        const currentSort = filters.sort ?? 'created_at';
+        const currentOrder = filters.order ?? 'desc';
+        const baseParams = new URLSearchParams();
+        if (filters.status) baseParams.set('status', filters.status);
+        if (filters.assigned) baseParams.set('assigned', filters.assigned);
+        if (filters.type) baseParams.set('type', filters.type);
+        if (filters.q) baseParams.set('q', filters.q);
+        function sortHref(key: string) {
+          const p = new URLSearchParams(baseParams);
+          p.set('sort', key);
+          p.set('order', currentSort === key && currentOrder === 'asc' ? 'desc' : 'asc');
+          return `/parts?${p.toString()}`;
+        }
+        const sortButtons = [
+          { key: 'created_at', label: 'Date Added' },
+          { key: 'name', label: 'Name' },
+          { key: 'part_number', label: 'Part No.' },
+          { key: 'status', label: 'Status' },
+          { key: 'assembly', label: 'Assembly' },
+        ];
+        return (
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-xs text-gray-500 mr-1">Sort:</span>
+              {sortButtons.map(({ key, label }) => (
+                <Link
+                  key={key}
+                  href={sortHref(key)}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                    currentSort === key
+                      ? 'bg-gray-600 text-gray-100'
+                      : 'bg-gray-800 border border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                  }`}
+                >
+                  {label}{currentSort === key ? <span className="ml-0.5">{currentOrder === 'asc' ? '↑' : '↓'}</span> : null}
+                </Link>
+              ))}
+            </div>
+            <form method="GET" action="/parts" className="flex items-center gap-1.5 shrink-0">
+              {filters.status && <input type="hidden" name="status" value={filters.status} />}
+              {filters.assigned && <input type="hidden" name="assigned" value={filters.assigned} />}
+              {filters.type && <input type="hidden" name="type" value={filters.type} />}
+              {filters.sort && <input type="hidden" name="sort" value={filters.sort} />}
+              {filters.order && <input type="hidden" name="order" value={filters.order} />}
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                <input
+                  type="text"
+                  name="q"
+                  defaultValue={filters.q ?? ''}
+                  placeholder="Search…"
+                  className="pl-7 pr-2 py-1.5 w-44 bg-gray-800 border border-gray-600 rounded-lg text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button type="submit" className="px-2.5 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-200 hover:bg-gray-600 transition-colors">
+                Go
+              </button>
+              {filters.q && (
+                <Link
+                  href={`/parts?${(() => { const p = new URLSearchParams(baseParams); p.delete('q'); return p.toString(); })()}`}
+                  className="text-xs text-gray-500 hover:text-gray-300"
+                >
+                  ✕
+                </Link>
+              )}
+            </form>
+          </div>
+        );
+      })()}
 
       {!parts || parts.length === 0 ? (
         <EmptyState />
@@ -228,9 +309,6 @@ export default async function PartsPage({
                       >
                         {part.name}
                       </Link>
-                      {part.naming_flagged && (
-                        <span title="Name may not conform to part number format" className="text-yellow-500 text-xs">⚠</span>
-                      )}
                       {part.onshape_part_id && (
                         <span title="Imported from OnShape" className="text-cyan-400 text-xs font-mono bg-cyan-900/30 px-1 rounded">
                           OS

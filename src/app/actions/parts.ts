@@ -354,6 +354,90 @@ export async function updatePartBomQuantity(partId: string, assemblyId: string, 
   return { success: true };
 }
 
+/** Toggle the quantity lock on a BOM item. Locked items are skipped by Onshape re-imports. */
+export async function toggleQuantityLock(partId: string, assemblyId: string, locked: boolean) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot lock quantities' };
+
+  const { error } = await supabase
+    .from('bom_items')
+    .update({ quantity_locked: locked })
+    .eq('part_id', partId)
+    .eq('assembly_id', assemblyId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/assemblies/${assemblyId}`);
+  return { success: true };
+}
+
+/** Update the status of every part in an assembly (and all descendant assemblies) at once. */
+export async function bulkUpdateAssemblyStatus(assemblyId: string, status: PartStatus, reason: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot update status' };
+
+  // Collect all assembly IDs in the subtree via iterative BFS
+  const assemblyIds: string[] = [assemblyId];
+  const queue = [assemblyId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const { data: children } = await supabase
+      .from('assemblies')
+      .select('id')
+      .eq('parent_assembly_id', current);
+    for (const child of children ?? []) {
+      assemblyIds.push(child.id);
+      queue.push(child.id);
+    }
+  }
+
+  // Fetch all parts in those assemblies
+  const { data: parts } = await supabase
+    .from('parts')
+    .select('id')
+    .in('assembly_id', assemblyIds);
+
+  if (!parts || parts.length === 0) return { success: true };
+
+  const partIds = parts.map((p) => p.id);
+
+  const { error } = await supabase.from('parts').update({ status }).in('id', partIds);
+  if (error) return { error: error.message };
+
+  // Record history for each part
+  const historyRows = partIds.map((part_id) => ({
+    part_id,
+    status,
+    changed_by: user.id,
+    notes: reason,
+  }));
+  await supabase.from('part_status_history').insert(historyRows);
+
+  for (const aId of assemblyIds) {
+    revalidatePath(`/assemblies/${aId}`);
+  }
+  revalidatePath('/parts');
+  return { success: true };
+}
+
 export async function getNextPartNumber(assemblyNumber: string): Promise<string> {
   const supabase = await createClient();
   const yy = assemblyNumber.slice(0, 2);

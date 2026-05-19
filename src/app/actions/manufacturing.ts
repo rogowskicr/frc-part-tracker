@@ -57,6 +57,45 @@ export async function addPartManufacturing(formData: FormData) {
   return { success: true };
 }
 
+export async function updatePartManufacturing(
+  id: string,
+  partId: string,
+  data: {
+    processId: string | null;
+    outsourced: boolean;
+    vendor: string | null;
+    notes: string | null;
+  }
+) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (profile?.role === 'viewer') return { error: 'Viewers cannot edit processes' };
+
+  const { error } = await supabase
+    .from('part_manufacturing')
+    .update({
+      process_id: data.processId,
+      outsourced: data.outsourced,
+      vendor: data.vendor,
+      notes: data.notes,
+    })
+    .eq('id', id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/parts/${partId}`);
+  revalidatePath('/manufacturing');
+  return { success: true };
+}
+
 export async function removePartManufacturing(id: string, partId: string) {
   const supabase = await createClient();
 

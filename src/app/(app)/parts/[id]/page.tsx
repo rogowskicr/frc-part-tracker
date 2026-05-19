@@ -55,12 +55,19 @@ export default async function PartDetailPage({
 
   // Manufacturing data (only needed for manufactured parts)
   const isManufactured = part.type === 'manufactured';
-  const [mfgProcesses, partMfg] = isManufactured
+  const [mfgProcesses, partMfg, customOutsourcedVendors] = isManufactured
     ? await Promise.all([
         getManufacturingProcesses(teamId),
         getPartManufacturing(id),
+        supabase
+          .from('team_vendors')
+          .select('name')
+          .eq('team_id', teamId)
+          .or('type.eq.outsourced,type.eq.both')
+          .order('name')
+          .then(({ data }) => (data ?? []).map((v: { name: string }) => v.name)),
       ])
-    : [[], []];
+    : [[], [], []];
 
   const assembly = part.assembly as unknown as { id: string; assembly_number: string; name: string } | null;
   const assignedUser = part.assigned_user as unknown as { id: string; name: string } | null;
@@ -83,6 +90,7 @@ export default async function PartDetailPage({
     'powder_coating_complete',
     'robot_ready',
     'on_hold',
+    'ready_for_order',
   ];
 
   return (
@@ -114,14 +122,6 @@ export default async function PartDetailPage({
               </span>
             )}
             <h1 className="text-2xl font-bold text-gray-100">{part.name}</h1>
-            {part.naming_flagged && (
-              <span
-                title="Part name may not conform to the expected format"
-                className="inline-flex items-center gap-1 text-xs bg-yellow-900/40 text-yellow-300 border border-yellow-700 px-2 py-0.5 rounded-full"
-              >
-                ⚠ Name flagged
-              </span>
-            )}
             {part.onshape_part_id && (
               <span
                 title="Imported from OnShape"
@@ -231,7 +231,7 @@ export default async function PartDetailPage({
           canMutate={canMutate}
           processes={mfgProcesses as { id: string; name: string }[]}
           partManufacturing={
-            (partMfg as Array<{
+            (partMfg as unknown as Array<{
               id: string;
               outsourced: boolean;
               vendor: string | null;
@@ -240,6 +240,7 @@ export default async function PartDetailPage({
             }>)
           }
           hasOnshapeId={!!part.onshape_element_id}
+          customOutsourcedVendors={customOutsourcedVendors as string[]}
         />
       )}
 

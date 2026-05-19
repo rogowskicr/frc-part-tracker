@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { linkAssemblyToOnshape, unlinkAssemblyFromOnshape } from '@/app/actions/onshape';
 
 interface SyncDiff {
@@ -33,6 +34,7 @@ export default function OnshapePanel({
   lastSync,
 }: Props) {
   const isLinked = !!(currentDocId && currentWorkspaceId && currentElementId);
+  const router = useRouter();
 
   const [panelState, setPanelState]   = useState<PanelState>('idle');
   const [applying, setApplying]       = useState(false);
@@ -78,6 +80,7 @@ export default function OnshapePanel({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Import failed');
       setImportResult({ created: data.created, updated: data.updated, skipped: data.skipped });
+      router.refresh();
     } catch (err) {
       setImportError((err as Error).message);
     } finally {
@@ -123,6 +126,7 @@ export default function OnshapePanel({
       );
       setDiff(null);
       setPanelState('idle');
+      router.refresh();
     } catch (err) {
       setApplyError((err as Error).message);
     } finally {

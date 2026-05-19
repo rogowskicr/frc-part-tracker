@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { updatePart } from '@/app/actions/parts';
+import { saveCustomVendor } from '@/app/actions/vendors';
 import { DEFAULT_COTS_VENDORS } from '@/lib/types';
 
 interface Props {
@@ -28,12 +29,21 @@ interface Props {
   teamMembers: { id: string; name: string }[];
   assemblies: { id: string; assembly_number: string; name: string }[];
   likePartCount: number;
+  customVendors: string[];
 }
 
-export default function EditPartForm({ part, bom, teamMembers, assemblies, likePartCount }: Props) {
+export default function EditPartForm({ part, bom, teamMembers, assemblies, likePartCount, customVendors }: Props) {
   const [type, setType] = useState<'manufactured' | 'off_shelf'>(part.type);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Vendor selection: track whether "Other" is chosen and the custom name
+  const knownVendors = DEFAULT_COTS_VENDORS.filter((v) => v !== 'Other');
+  const allVendors = [...new Set([...knownVendors, ...customVendors])];
+  const initialVendor = bom?.cots_vendor ?? '';
+  const isInitiallyOther = initialVendor !== '' && !allVendors.includes(initialVendor);
+  const [vendorSelection, setVendorSelection] = useState(isInitiallyOther ? 'Other' : initialVendor);
+  const [customVendorName, setCustomVendorName] = useState(isInitiallyOther ? initialVendor : '');
 
   const isOnshape = !!(part.onshape_part_id && part.onshape_element_id);
   const isOTS = type === 'off_shelf';
@@ -42,6 +52,21 @@ export default function EditPartForm({ part, bom, teamMembers, assemblies, likeP
     setLoading(true);
     setError(null);
     formData.set('type', type);
+
+    if (isOTS) {
+      if (vendorSelection === 'Other') {
+        const trimmedVendor = customVendorName.trim();
+        if (trimmedVendor) {
+          await saveCustomVendor(trimmedVendor, 'cots');
+          formData.set('cots_vendor', trimmedVendor);
+        } else {
+          formData.set('cots_vendor', '');
+        }
+      } else {
+        formData.set('cots_vendor', vendorSelection);
+      }
+    }
+
     const result = await updatePart(part.id, formData);
     if (result?.error) {
       setError(result.error);
@@ -215,15 +240,25 @@ export default function EditPartForm({ part, bom, teamMembers, assemblies, likeP
                 </label>
                 <select
                   id="cots_vendor"
-                  name="cots_vendor"
-                  defaultValue={bom?.cots_vendor ?? ''}
+                  value={vendorSelection}
+                  onChange={(e) => setVendorSelection(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
                 >
                   <option value="">Select vendor…</option>
-                  {DEFAULT_COTS_VENDORS.map((v) => (
+                  {allVendors.map((v) => (
                     <option key={v} value={v}>{v}</option>
                   ))}
+                  <option value="Other">Other…</option>
                 </select>
+                {vendorSelection === 'Other' && (
+                  <input
+                    type="text"
+                    value={customVendorName}
+                    onChange={(e) => setCustomVendorName(e.target.value)}
+                    placeholder="Enter vendor name…"
+                    className="mt-2 w-full px-3 py-2 border border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-900 text-gray-100"
+                  />
+                )}
               </div>
 
               <div>

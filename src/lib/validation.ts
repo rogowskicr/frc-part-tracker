@@ -106,19 +106,34 @@ export function nextTopLevelAssemblyNumber(code: string, existingNumbers: string
 
 /**
  * Given a parent assembly number and existing part numbers, suggest the next part number.
+ *
+ * Parts are assigned within the same hundred-block as the assembly:
+ *   A_100 → P_101 … P_199   A_108 → P_101 … P_199 (same block)   A_200 → P_201 … P_299
+ *
+ * The upper bound is inclusive (<=) so the boundary value P_199 is visible to
+ * subsequent calls and the sequence advances correctly rather than returning the
+ * same number on every call once the block fills up.
+ *
+ * If the block is exhausted, the function returns the block maximum (e.g. P_199)
+ * and allows duplicate assignment — the user must resolve these manually.
  */
 export function nextPartNumber(parentAssemblyNumber: string, existingPartNumbers: string[]): string {
   const prefix    = extractPrefix(parentAssemblyNumber);
   const parentNum = extractNumber(parentAssemblyNumber);
   if (!prefix || parentNum === null) return '';
 
-  const partsInGroup = existingPartNumbers
+  const blockBase = Math.floor(parentNum / 100) * 100; // e.g. 108 → 100, 200 → 200
+  const blockMax  = blockBase + 99;                    // e.g. 199, 299
+
+  const usedInBlock = existingPartNumbers
     .filter((n) => n.startsWith(`${prefix}_P_`))
     .map(extractNumber)
-    .filter((n): n is number => n !== null && n > parentNum && n < parentNum + 100);
+    .filter((n): n is number => n !== null && n > blockBase && n <= blockMax);
 
-  const next = partsInGroup.length > 0 ? Math.max(...partsInGroup) + 1 : parentNum + 1;
-  return `${prefix}_P_${next}`;
+  const next = usedInBlock.length > 0 ? Math.max(...usedInBlock) + 1 : blockBase + 1;
+
+  // Cap at blockMax; duplicates allowed when the block is full (per spec)
+  return `${prefix}_P_${Math.min(next, blockMax)}`;
 }
 
 /**

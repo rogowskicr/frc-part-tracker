@@ -9,7 +9,8 @@ export type PartStatus =
   | 'ready_for_powder_coating'
   | 'powder_coating_complete'
   | 'robot_ready'
-  | 'on_hold';
+  | 'on_hold'
+  | 'ready_for_order';
 /** @deprecated superseded by PartStatus — part_manufacturing.status is no longer used */
 export type ManufacturingStatus = 'not_started' | 'in_progress' | 'complete';
 
@@ -131,6 +132,7 @@ export const PART_STATUS_LABELS: Record<PartStatus, string> = {
   powder_coating_complete: 'Powder Coating Complete',
   robot_ready: 'Robot Ready',
   on_hold: 'On Hold',
+  ready_for_order: 'Ready for Order',
 };
 
 export const PART_STATUS_COLORS: Record<PartStatus, string> = {
@@ -142,6 +144,7 @@ export const PART_STATUS_COLORS: Record<PartStatus, string> = {
   powder_coating_complete: 'bg-violet-900/50 text-violet-300',
   robot_ready: 'bg-emerald-900/50 text-emerald-300',
   on_hold: 'bg-gray-700 text-gray-300',
+  ready_for_order: 'bg-sky-900/50 text-sky-300',
 };
 
 export const DEFAULT_COTS_VENDORS = [
@@ -151,5 +154,12 @@ export const DEFAULT_COTS_VENDORS = [
   'Amazon',
   'REV Robotics',
   'VEXpro',
+  'Other',
+];
+
+export const DEFAULT_OUTSOURCED_VENDORS = [
+  'Fabworks',
+  'Send-Cut-Send',
+  'OSH Cut',
   'Other',
 ];
