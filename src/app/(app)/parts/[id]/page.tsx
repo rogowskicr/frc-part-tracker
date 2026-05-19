@@ -6,6 +6,8 @@ import type { PartStatus } from '@/lib/types';
 import { PART_STATUS_LABELS } from '@/lib/types';
 import UpdateStatusForm from './UpdateStatusForm';
 import DeletePartButton from './DeletePartButton';
+import ManufacturingSection from './ManufacturingSection';
+import { getManufacturingProcesses, getPartManufacturing } from '@/app/actions/manufacturing';
 
 export default async function PartDetailPage({
   params,
@@ -21,12 +23,12 @@ export default async function PartDetailPage({
   if (!user) redirect('/login');
 
   const [profileRes, partRes, historyRes] = await Promise.all([
-    supabase.from('user_profiles').select('role').eq('id', user.id).single(),
+    supabase.from('user_profiles').select('role, team_id').eq('id', user.id).single(),
     supabase
       .from('parts')
       .select(
         `
-        id, part_number, name, description, type, status, naming_flagged, cad_link, created_at, onshape_part_id,
+        id, part_number, name, description, type, status, naming_flagged, cad_link, created_at, onshape_part_id, onshape_element_id,
         assembly:assembly_id(id, assembly_number, name),
         assigned_user:assigned_to(id, name),
         bom_items(onshape_quantity, cots_quantity_spare, cots_vendor, cots_supplier_part_number, cots_purchase_link)
@@ -47,8 +49,18 @@ export default async function PartDetailPage({
   const part = partRes.data;
   const history = historyRes.data ?? [];
   const role = profileRes.data?.role ?? 'viewer';
+  const teamId = profileRes.data?.team_id ?? '';
   const canMutate = role === 'admin' || role === 'engineer';
   const isAdmin = role === 'admin';
+
+  // Manufacturing data (only needed for manufactured parts)
+  const isManufactured = part.type === 'manufactured';
+  const [mfgProcesses, partMfg] = isManufactured
+    ? await Promise.all([
+        getManufacturingProcesses(teamId),
+        getPartManufacturing(id),
+      ])
+    : [[], []];
 
   const assembly = part.assembly as unknown as { id: string; assembly_number: string; name: string } | null;
   const assignedUser = part.assigned_user as unknown as { id: string; name: string } | null;
@@ -66,7 +78,10 @@ export default async function PartDetailPage({
     'design',
     'ready_for_manufacturing',
     'in_progress',
-    'complete',
+    'manufacturing_complete',
+    'ready_for_powder_coating',
+    'powder_coating_complete',
+    'robot_ready',
     'on_hold',
   ];
 
@@ -208,6 +223,25 @@ export default async function PartDetailPage({
           )}
         </div>
       </div>
+
+      {/* Manufacturing processes + CAD export */}
+      {isManufactured && (
+        <ManufacturingSection
+          partId={id}
+          canMutate={canMutate}
+          processes={mfgProcesses as { id: string; name: string }[]}
+          partManufacturing={
+            (partMfg as Array<{
+              id: string;
+              outsourced: boolean;
+              vendor: string | null;
+              notes: string | null;
+              process: { id: string; name: string } | null;
+            }>)
+          }
+          hasOnshapeId={!!part.onshape_element_id}
+        />
+      )}
 
       {/* Status history */}
       <div className="bg-gray-800 rounded-xl border border-gray-700 p-5">

@@ -14,6 +14,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/assemblies', label: 'Assemblies' },
   { href: '/parts', label: 'Parts' },
+  { href: '/manufacturing', label: 'Manufacturing' },
   { href: '/orders', label: 'Orders' },
 ];
 

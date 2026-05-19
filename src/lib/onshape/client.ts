@@ -107,6 +107,52 @@ async function apiFetch<T>(
   }
 }
 
+// Variant of apiFetch that returns raw binary (ArrayBuffer) instead of JSON.
+// Binary export endpoints (e.g. /partstudios/.../stl) redirect to blob storage.
+// We must NOT forward the HMAC Authorization header to the redirect target — it
+// was signed for the original path and OnShape will reject it with 401.
+async function apiFetchBinary(
+  method: string,
+  path: string,
+  queryParams: Record<string, string>,
+  creds: OnshapeCredentials,
+  body?: unknown,
+): Promise<ArrayBuffer> {
+  const qs      = new URLSearchParams(queryParams).toString();
+  const apiPath = `/api/${path}`;
+  const headers = buildHeaders(method, apiPath, qs, creds);
+  const url     = `${BASE_URL}${apiPath}${qs ? `?${qs}` : ''}`;
+
+  const res = await fetch(url, {
+    method,
+    headers,
+    redirect: 'manual',
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+
+  // OnShape binary endpoints redirect; re-sign the new URL with fresh HMAC auth.
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get('location');
+    if (!location) throw new Error('OnShape redirected but returned no Location header');
+    const redirectUrl = new URL(location, BASE_URL);
+    const redirectPath = redirectUrl.pathname;
+    const redirectQs   = redirectUrl.searchParams.toString();
+    const redirectHeaders = buildHeaders('GET', redirectPath, redirectQs, creds);
+    const blobRes = await fetch(redirectUrl.toString(), { headers: redirectHeaders, redirect: 'manual' });
+    if (!blobRes.ok) {
+      const text = await blobRes.text();
+      throw new Error(`OnShape binary download error ${blobRes.status}: ${text.slice(0, 200)}`);
+    }
+    return blobRes.arrayBuffer();
+  }
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OnShape API error ${res.status}: ${text.slice(0, 400)}`);
+  }
+  return res.arrayBuffer();
+}
+
 export interface OnshapeConnectionResult {
   /** Number of documents visible to this API key */
   documentCount: number;
@@ -170,6 +216,97 @@ export async function fetchShadedView(
     'GET',
     `parts/d/${docId}/${workspaceType}/${workspaceId}/e/${elementId}/partid/${partId}/shadedviews`,
     { viewMatrix: 'front', outputHeight: '200', outputWidth: '200', pixelSize: '0' },
+    creds,
+  );
+}
+
+// Fetch a part's STL via the async translation API (same flow as STEP).
+// The direct /partstudios/.../stl endpoint redirects through OnShape's blob
+// infrastructure in a way that requires complex re-auth; the translation API
+// sidesteps this entirely.
+export async function fetchPartStl(
+  docId: string,
+  workspaceId: string,
+  elementId: string,
+  partId: string,
+  creds: OnshapeCredentials,
+): Promise<ArrayBuffer> {
+  const job = await apiFetch<OnshapeTranslation>(
+    'POST',
+    `partstudios/d/${docId}/w/${workspaceId}/e/${elementId}/translations`,
+    {},
+    creds,
+    { formatName: 'STL', storeInDocument: false, partIds: partId },
+  );
+
+  let result = job;
+  for (let i = 0; i < 10 && result.requestState === 'ACTIVE'; i++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    result = await apiFetch<OnshapeTranslation>('GET', `translations/${result.id}`, {}, creds);
+  }
+
+  if (result.requestState !== 'DONE') {
+    throw new Error(`STL translation ${result.requestState} after polling timeout`);
+  }
+
+  const externalId = result.resultExternalDataIds?.[0];
+  if (!externalId) throw new Error('STL translation completed but no file ID returned');
+
+  return apiFetchBinary('GET', `documents/d/${docId}/externaldata/${externalId}`, {}, creds);
+}
+
+interface OnshapeTranslation {
+  id: string;
+  requestState: 'ACTIVE' | 'DONE' | 'FAILED';
+  resultExternalDataIds?: string[];
+}
+
+// Fetch a part's STEP file via the async OnShape translation API.
+// Creates a translation job, polls until done, then downloads the result.
+export async function fetchPartStep(
+  docId: string,
+  workspaceId: string,
+  elementId: string,
+  partId: string,
+  creds: OnshapeCredentials,
+): Promise<ArrayBuffer> {
+  // 1. Kick off the translation
+  const job = await apiFetch<OnshapeTranslation>(
+    'POST',
+    `partstudios/d/${docId}/w/${workspaceId}/e/${elementId}/translations`,
+    {},
+    creds,
+    {
+      formatName: 'STEP',
+      storeInDocument: false,
+      partIds: partId,
+    },
+  );
+
+  // 2. Poll until DONE (max 25s: 10 × 2.5s)
+  let result = job;
+  for (let i = 0; i < 10 && result.requestState === 'ACTIVE'; i++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    result = await apiFetch<OnshapeTranslation>(
+      'GET',
+      `translations/${result.id}`,
+      {},
+      creds,
+    );
+  }
+
+  if (result.requestState !== 'DONE') {
+    throw new Error(`STEP translation ${result.requestState} after polling timeout`);
+  }
+
+  const externalId = result.resultExternalDataIds?.[0];
+  if (!externalId) throw new Error('STEP translation completed but no file ID returned');
+
+  // 3. Download the file
+  return apiFetchBinary(
+    'GET',
+    `documents/d/${docId}/externaldata/${externalId}`,
+    {},
     creds,
   );
 }

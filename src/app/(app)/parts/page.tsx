@@ -87,8 +87,17 @@ export default async function PartsPage({
     worst_status: PartStatus;
   };
 
-  // Status priority — highest index = furthest behind
-  const STATUS_PRIORITY: PartStatus[] = ['complete', 'in_progress', 'on_hold', 'ready_for_manufacturing', 'design'];
+  // Status priority — highest index = furthest behind in the pipeline
+  const STATUS_PRIORITY: PartStatus[] = [
+    'robot_ready',
+    'powder_coating_complete',
+    'ready_for_powder_coating',
+    'manufacturing_complete',
+    'in_progress',
+    'on_hold',
+    'ready_for_manufacturing',
+    'design',
+  ];
   function worstStatus(statuses: PartStatus[]): PartStatus {
     return statuses.reduce((worst, s) =>
       STATUS_PRIORITY.indexOf(s) > STATUS_PRIORITY.indexOf(worst) ? s : worst,
@@ -137,7 +146,10 @@ export default async function PartsPage({
     'design',
     'ready_for_manufacturing',
     'in_progress',
-    'complete',
+    'manufacturing_complete',
+    'ready_for_powder_coating',
+    'powder_coating_complete',
+    'robot_ready',
     'on_hold',
   ];
 

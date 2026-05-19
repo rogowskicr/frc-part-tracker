@@ -30,7 +30,9 @@
       "Bash(xargs grep -l \"searchParam\" -i)",
       "Bash(xargs ls -la)",
       "Bash(Get-Content \"C:\\\\Users\\\\conno\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-conno-Documents-FRC-Part-Tracker\\\\3f082774-accb-4f9b-8d6b-c6289e54d4d8\\\\tasks\\\\b4m1y7n83.output\" -Wait)",
-      "Bash(Select-String -Pattern \"Ready|Error|error|Failed|localhost\")"
+      "Bash(Select-String -Pattern \"Ready|Error|error|Failed|localhost\")",
+      "PowerShell(Get-Command node -ErrorAction SilentlyContinue; Get-Command npm -ErrorAction SilentlyContinue; where.exe node 2>$null; where.exe npm 2>$null; ls \"$env:APPDATA\\\\npm\" -ErrorAction SilentlyContinue | Select-Object -First 5; ls \"$env:ProgramFiles\\\\nodejs\" -ErrorAction SilentlyContinue | Select-Object -First 5)",
+      "PowerShell(try { Get-Item \"$env:ProgramFiles\\\\nodejs\\\\npm.cmd\" } catch {}; try { Get-Item \"C:\\\\Program Files\\\\nodejs\\\\npm.cmd\" } catch {}; try { Get-Item \"$env:APPDATA\\\\npm\\\\npm.cmd\" } catch {})"
     ]
   }
 }

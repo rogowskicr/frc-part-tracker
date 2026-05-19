@@ -36,6 +36,15 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) and sign up to create your team.
 
+> **Windows / PowerShell note:** If `npm` is not recognized, use the full path:
+> ```powershell
+> & "C:\Program Files\nodejs\npm.cmd" install
+> & "C:\Program Files\nodejs\npm.cmd" run dev
+> ```
+> In a standard Command Prompt (`cmd.exe`), plain `npm` works fine.
+
+Press **Ctrl+C** in the terminal to stop the server.
+
 ## Part Numbering Convention
 
 | Format | Example | Description |

@@ -90,7 +90,7 @@ export default async function DashboardPage() {
     .select('id, part_number, name, status, assembly_id, assemblies(assembly_number, name)')
     .eq('team_id', teamId)
     .eq('assigned_to', user.id)
-    .neq('status', 'complete')
+    .neq('status', 'robot_ready')
     .order('updated_at', { ascending: false })
     .limit(10);
 
@@ -125,7 +125,10 @@ export default async function DashboardPage() {
     'design',
     'ready_for_manufacturing',
     'in_progress',
-    'complete',
+    'manufacturing_complete',
+    'ready_for_powder_coating',
+    'powder_coating_complete',
+    'robot_ready',
     'on_hold',
   ];
 
@@ -178,9 +181,9 @@ export default async function DashboardPage() {
           href="/parts?status=in_progress"
         />
         <StatCard
-          label="Complete"
-          value={activeCode ? (statusCounts['complete'] ?? 0) : null}
-          href="/parts?status=complete"
+          label="Mfg Complete"
+          value={activeCode ? (statusCounts['manufacturing_complete'] ?? 0) : null}
+          href="/parts?status=manufacturing_complete"
         />
       </div>
 

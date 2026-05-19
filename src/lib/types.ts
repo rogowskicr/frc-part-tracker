@@ -1,7 +1,16 @@
 // Database types derived from schema
 export type UserRole = 'admin' | 'engineer' | 'viewer';
 export type PartType = 'manufactured' | 'off_shelf';
-export type PartStatus = 'design' | 'ready_for_manufacturing' | 'in_progress' | 'complete' | 'on_hold';
+export type PartStatus =
+  | 'design'
+  | 'ready_for_manufacturing'
+  | 'in_progress'
+  | 'manufacturing_complete'
+  | 'ready_for_powder_coating'
+  | 'powder_coating_complete'
+  | 'robot_ready'
+  | 'on_hold';
+/** @deprecated superseded by PartStatus — part_manufacturing.status is no longer used */
 export type ManufacturingStatus = 'not_started' | 'in_progress' | 'complete';
 
 export interface Team {
@@ -86,6 +95,7 @@ export interface PartManufacturing {
   outsourced: boolean;
   vendor: string | null;
   export_file_format: string | null;
+  /** @deprecated Use part.status (PartStatus) instead */
   status: ManufacturingStatus;
   notes: string | null;
   created_at: string;
@@ -116,7 +126,10 @@ export const PART_STATUS_LABELS: Record<PartStatus, string> = {
   design: 'Design',
   ready_for_manufacturing: 'Ready for Manufacturing',
   in_progress: 'In Progress',
-  complete: 'Complete',
+  manufacturing_complete: 'Manufacturing Complete',
+  ready_for_powder_coating: 'Ready for Powder Coating',
+  powder_coating_complete: 'Powder Coating Complete',
+  robot_ready: 'Robot Ready',
   on_hold: 'On Hold',
 };
 
@@ -124,7 +137,10 @@ export const PART_STATUS_COLORS: Record<PartStatus, string> = {
   design: 'bg-blue-900/50 text-blue-300',
   ready_for_manufacturing: 'bg-yellow-900/50 text-yellow-300',
   in_progress: 'bg-orange-900/50 text-orange-300',
-  complete: 'bg-green-900/50 text-green-300',
+  manufacturing_complete: 'bg-green-900/50 text-green-300',
+  ready_for_powder_coating: 'bg-purple-900/50 text-purple-300',
+  powder_coating_complete: 'bg-violet-900/50 text-violet-300',
+  robot_ready: 'bg-emerald-900/50 text-emerald-300',
   on_hold: 'bg-gray-700 text-gray-300',
 };
 

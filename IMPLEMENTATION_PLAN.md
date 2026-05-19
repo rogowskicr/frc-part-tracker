@@ -241,21 +241,45 @@ A cloud-hosted web application for FRC teams to track parts and subassemblies th
 
 ---
 
-## Phase 5: Manufacturing Workflow
+## Phase 5: Manufacturing Workflow — COMPLETE
 
-**Context from Phase 3 & 4**: Every manufactured part carries `onshape_element_id` + `onshape_part_id` + `cad_link`. The CAD export is a **pass-through only** — files are fetched from OnShape's export API on demand and streamed directly to the browser. No CAD files are stored in the application or Supabase Storage at any point. The `part_manufacturing` table and `manufacturing_processes` table already exist and are seeded with default processes (3D Printing, Laser Cut, CNC Mill, CNC Lathe, Hand Fabrication, Welding, Sheet Metal). The `cad_link` on each part opens the part directly in OnShape.
+**Deviations from original plan:**
+- Manufacturing status piggybacks off `part.status` — no separate `part_manufacturing.status` pipeline
+- `complete` status renamed to `manufacturing_complete`; three new end-states added: `ready_for_powder_coating`, `powder_coating_complete`, `robot_ready`
+- CAD export: both STL and STEP use the async translation API — DXF removed
+- No per-process team member assignment — existing `part.assigned_to` surfaces on manufacturing pages
 
-**CAD export formats supported**: STL (3D printing / visualization), STEP (CNC / CAM software import), DXF (laser cut / sheet metal). No PDF — use OnShape's native drawing environment for print-ready drawings.
+**New status pipeline (linear + on_hold escape hatch):**
+`design → ready_for_manufacturing → in_progress → manufacturing_complete → ready_for_powder_coating → powder_coating_complete → robot_ready`
 
-- [ ] **Assign processes to a part**: one or more processes per manufactured part using existing `part_manufacturing` table; shown on part detail page
-- [ ] **Outsourced flag**: checkbox on part edit/manufacturing form; exposes vendor name field
-- [ ] **CAD export buttons** on part detail page (only for parts with `onshape_element_id`): three buttons — STL · STEP · DXF — each calls a Next.js API route that proxies the OnShape export API and streams the file directly to the browser; no file stored server-side
-- [ ] **Manufacturing status pipeline**: `not_started → in_progress → qc → done` per `part_manufacturing` record (separate from the part's overall status)
-- [ ] **Process-level assignment**: assign a team member to each manufacturing operation
-- [ ] **Manufacturing queue view** (`/manufacturing`): all parts in `ready_for_manufacturing` or `in_progress` status, grouped by process; filtered to active project
-- [ ] Queue shows: part number, assembly, assigned engineer, CAD export buttons (STL/STEP/DXF), OnShape link
-- [ ] **Batch status update**: select multiple parts in queue → mark all as In Progress or Complete
-- [ ] Parts without `onshape_element_id` show CAD export buttons as disabled with tooltip "No OnShape link"
+- [x] **Assign processes to a part**: one or more processes per manufactured part using existing `part_manufacturing` table; shown on part detail page with add/remove UI
+- [x] **Outsourced flag**: checkbox on add-process form; exposes vendor name field
+- [x] **CAD export buttons** on part detail page (only for parts with `onshape_element_id`): STL · STEP buttons; disabled with tooltip for parts without OnShape link
+- [x] **Status expansion**: renamed `complete` → `manufacturing_complete`; added `ready_for_powder_coating`, `powder_coating_complete`, `robot_ready` statuses
+- [x] **Manufacturing queue view** (`/manufacturing`): all manufactured parts in `ready_for_manufacturing`, `in_progress`, or `manufacturing_complete` status, grouped by process or flat list; filtered to active project
+- [x] Queue shows: part number, assembly, assigned engineer, process list, CAD export buttons (STL/STEP), OnShape badge
+- [x] **Batch status update**: checkboxes per row; sticky footer bar → advance to any manufacturing status
+- [x] Parts without `onshape_element_id` show "No CAD" label; export buttons disabled
+- [x] **Manufacturing link** added to Navbar
+
+**Schema additions (migration `20260519000000_phase5_status`):**
+- `part_status` enum: renamed `complete` → `manufacturing_complete`; added `ready_for_powder_coating`, `powder_coating_complete`, `robot_ready`
+- Phase 4 tables backfilled with `IF NOT EXISTS` guards: `cots_orders`, `bom_items.cots_received`
+
+**CAD export implementation notes (derived from debugging):**
+- Both STL and STEP use `POST /partstudios/d/{did}/w/{wid}/e/{eid}/translations` with `{ formatName, storeInDocument: false, partIds: partId }` (partIds is a plain string, NOT an array — OnShape 400s on array)
+- Poll `GET /translations/{id}` until `requestState === 'DONE'` (max 10× 2.5s)
+- Download result via `GET /documents/d/{did}/externaldata/{resultExternalDataIds[0]}`
+- The direct `GET /partstudios/.../stl` endpoint was attempted first but fails: the path `/partstudios/.../partid/{partId}/stl` does not exist (404); the correct path `/partstudios/.../stl?partIds=...` redirects through OnShape's blob infrastructure requiring re-auth that is difficult to implement correctly. Translation API sidesteps this entirely.
+- Export takes 5–15s per part (translation job processing time)
+
+**New files:**
+- `supabase/migrations/20260519000000_phase5_status.sql`
+- `src/app/actions/manufacturing.ts`
+- `src/app/(app)/parts/[id]/ManufacturingSection.tsx`
+- `src/app/api/onshape/export/route.ts`
+- `src/app/(app)/manufacturing/page.tsx`
+- `src/app/(app)/manufacturing/ManufacturingQueue.tsx`
 
 ---
 
@@ -310,4 +334,6 @@ A cloud-hosted web application for FRC teams to track parts and subassemblies th
 - [x] Active project correctly scopes all list views, forms, and number suggestions
 - [x] Viewer role enforced — read-only users cannot mutate data via UI or API
 - [ ] App works reliably under typical team usage (20–50 concurrent users)
-- [ ] Full manufacturing workflow tracked from design through QC for all manufactured parts
+- [x] Full manufacturing pipeline tracked via part status from design through robot ready
+- [x] Manufacturing processes assigned and visible per part and in the manufacturing queue
+- [x] CAD files exported directly from OnShape (STL synchronous; STEP via translation API)

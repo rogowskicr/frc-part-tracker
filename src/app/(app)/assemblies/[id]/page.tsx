@@ -97,19 +97,29 @@ export default async function AssemblyDetailPage({
     },
     {} as Record<PartStatus, number>
   );
-  const statusOrder: PartStatus[] = ['design', 'ready_for_manufacturing', 'in_progress', 'complete', 'on_hold'];
+  const statusOrder: PartStatus[] = [
+    'design', 'ready_for_manufacturing', 'in_progress',
+    'manufacturing_complete', 'ready_for_powder_coating', 'powder_coating_complete',
+    'robot_ready', 'on_hold',
+  ];
   const statusLabels: Record<PartStatus, string> = {
     design: 'Design',
     ready_for_manufacturing: 'Mfg Ready',
     in_progress: 'In Progress',
-    complete: 'Complete',
+    manufacturing_complete: 'Mfg Complete',
+    ready_for_powder_coating: 'Powder Coat Ready',
+    powder_coating_complete: 'Powder Coat Done',
+    robot_ready: 'Robot Ready',
     on_hold: 'On Hold',
   };
   const statusColors: Record<PartStatus, string> = {
     design: 'bg-blue-900/40 text-blue-300',
     ready_for_manufacturing: 'bg-yellow-900/40 text-yellow-300',
     in_progress: 'bg-orange-900/40 text-orange-300',
-    complete: 'bg-green-900/40 text-green-300',
+    manufacturing_complete: 'bg-green-900/40 text-green-300',
+    ready_for_powder_coating: 'bg-purple-900/40 text-purple-300',
+    powder_coating_complete: 'bg-violet-900/40 text-violet-300',
+    robot_ready: 'bg-emerald-900/40 text-emerald-300',
     on_hold: 'bg-gray-700 text-gray-300',
   };
 
